@@ -1,0 +1,16 @@
+{
+  "id": "./index.html",
+  "name": "My Personal Quizlet",
+  "short_name": "My Quizlet",
+  "description": "Không gian học tiếng Anh cá nhân của bạn.",
+  "lang": "vi",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f6f7fb",
+  "theme_color": "#4257b2",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
