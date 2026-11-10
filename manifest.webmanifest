@@ -1,7 +1,7 @@
 {
   "id": "./index.html",
-  "name": "My Personal Quizlet",
-  "short_name": "My Quizlet",
+  "name": "Chill English Quiz",
+  "short_name": "Chill English",
   "description": "Không gian học tiếng Anh cá nhân của bạn.",
   "lang": "vi",
   "start_url": "./index.html",
