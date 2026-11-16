@@ -1,5 +1,5 @@
-const CACHE = 'my-personal-quizlet-shell-v1';
-const SHELL = ['./index.html', './manifest.webmanifest', './icon.svg'];
+const CACHE = 'chill-english-shell-v3';
+const SHELL = ['./index.html', './manifest.webmanifest', './icon.svg', './apple-touch-icon.png', './favicon-32x32.png', './icon-192.png', './icon-512.png', './og-image.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
@@ -11,6 +11,16 @@ self.addEventListener('activate', event => {
     keys.filter(key => key !== CACHE).map(key => caches.delete(key))
   )));
   self.clients.claim();
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const target = new URL('./index.html#home', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+    const existing = clients.find(client => 'focus' in client);
+    if (existing) return existing.navigate(target).then(() => existing.focus());
+    return self.clients.openWindow(target);
+  }));
 });
 
 self.addEventListener('fetch', event => {
