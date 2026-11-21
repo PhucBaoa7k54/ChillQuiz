@@ -1,5 +1,5 @@
-const CACHE = 'chill-english-shell-v4';
-const SHELL = ['./index.html', './manifest.webmanifest', './icon.svg', './apple-touch-icon.png', './favicon-32x32.png', './favicon-16x16.png', './icon-192.png', './icon-512.png', './og-image.png'];
+const CACHE = 'chill-english-shell-v6';
+const SHELL = ['./index.html', './pronunciationService.js', './manifest.webmanifest', './icon.svg', './apple-touch-icon.png', './favicon-32x32.png', './favicon-16x16.png', './icon-192.png', './icon-512.png', './og-image.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
