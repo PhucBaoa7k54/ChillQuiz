@@ -1,5 +1,4 @@
-/* Pronunciation assessment adapter for Chill English Quiz.
-   Azure provides phoneme-level feedback; Web Speech is an explicitly approximate fallback. */
+/* Pronunciation adapter for Chill English Quiz. Detailed scoring runs on the server; browser speech is a clearly labeled fallback. */
 (function (root) {
   'use strict';
 
@@ -9,7 +8,7 @@
   function alignText(reference, spoken) {
     const a = Array.from(clean(reference));
     const b = Array.from(clean(spoken));
-    if (!a.length || !b.length) return { score: 0, characters: a.map(char => ({ char, score: 0, status: 'wrong' })) };
+    if (!a.length || !b.length) return { score: 0, characters: Array.from(String(reference || ''), char => ({ char, score: 0, status: 'wrong' })) };
     const rows = a.length + 1, cols = b.length + 1;
     const dp = Array.from({ length: rows }, () => Array(cols).fill(0));
     for (let i = 0; i < rows; i++) dp[i][0] = i;
@@ -38,95 +37,13 @@
     return { score: Math.round((matches / Math.max(a.length, b.length)) * 100), characters };
   }
 
-  function groupLetters(word) {
-    const text = String(word || '');
-    const groups = [];
-    const patterns = ['tion', 'sion', 'tch', 'dge', 'igh', 'eigh', 'ough', 'ph', 'sh', 'ch', 'th', 'wh', 'ck', 'ng', 'qu', 'ee', 'ea', 'oo', 'ou', 'ow', 'oi', 'oy', 'ai', 'ay', 'au', 'aw', 'er', 'ir', 'ur', 'ar', 'or'];
-    for (let i = 0; i < text.length;) {
-      if (!/[a-z]/i.test(text[i])) { groups.push({ text: text[i], start: i, end: i + 1, neutral: true }); i++; continue; }
-      const match = patterns.find(pattern => text.slice(i, i + pattern.length).toLowerCase() === pattern);
-      const size = match ? match.length : 1;
-      groups.push({ text: text.slice(i, i + size), start: i, end: i + size });
-      i += size;
-    }
-    return groups;
-  }
-
-  function parseAzureResult(result, reference) {
-    let raw = '';
-    try { raw = result.properties.getProperty(root.SpeechSDK.PropertyId.SpeechServiceResponse_JsonResult); } catch (_) {}
-    if (!raw && result.json) raw = result.json;
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    const best = data?.NBest?.[0] || {};
-    const assessment = best.PronunciationAssessment || {};
-    const word = best.Words?.[0] || {};
-    const wordAssessment = word.PronunciationAssessment || {};
-    const accuracy = Number(assessment.AccuracyScore ?? wordAssessment.AccuracyScore);
-    if (!Number.isFinite(accuracy)) throw new Error('Azure không trả về điểm phát âm cho từ này.');
-    const completeness = Number.isFinite(Number(assessment.CompletenessScore)) ? Number(assessment.CompletenessScore) : 100;
-    const score = clamp(Math.round((accuracy * 0.85 + completeness * 0.15) * 100) / 100, 0, 100);
-    const phonemes = (word.Phonemes || []).map(item => {
-      const detail = item.PronunciationAssessment || {};
-      const spoken = detail.NBestPhonemes?.[0]?.Phoneme || '';
-      const value = Number(detail.AccuracyScore);
-      const phonemeScore = Number.isFinite(value) ? clamp(value, 0, 100) : 0;
-      return { expected: String(item.Phoneme || ''), spoken: String(spoken), score: phonemeScore, status: phonemeScore >= 75 ? 'good' : phonemeScore >= 50 ? 'warn' : 'wrong' };
-    });
-    const groups = groupLetters(reference);
-    const characters = Array.from(String(reference || ''), char => ({ char, score: null, status: 'neutral' }));
-    const scoredGroups = groups.filter(group => !group.neutral);
-    scoredGroups.forEach((group, index) => {
-      const phoneIndex = Math.min(phonemes.length - 1, Math.floor((index + 0.5) * phonemes.length / Math.max(1, scoredGroups.length)));
-      const phone = phonemes[phoneIndex];
-      for (let charIndex = group.start; charIndex < group.end; charIndex++) {
-        if (characters[charIndex] && phone) characters[charIndex] = { ...characters[charIndex], score: phone.score, status: phone.status, phoneme: phone.expected };
-      }
-    });
-    return {
-      score,
-      accuracy: clamp(accuracy, 0, 100),
-      completeness: clamp(completeness, 0, 100),
-      transcript: String(best.Display || best.Lexical || result.text || ''),
-      characters,
-      phonemes,
-      source: 'azure-phoneme',
-      note: 'Điểm âm vị từ Azure Speech. Màu chữ là ánh xạ tham khảo; xem các thẻ IPA để biết điểm âm trực tiếp.'
-    };
-  }
-
-  function loadSpeechSDK() {
-    if (root.SpeechSDK) return Promise.resolve(root.SpeechSDK);
-    if (root.__chillSpeechSdkPromise) return root.__chillSpeechSdkPromise;
-    root.__chillSpeechSdkPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://aka.ms/csspeech/jsbrowserpackage';
-      script.async = true;
-      script.onload = () => root.SpeechSDK ? resolve(root.SpeechSDK) : reject(new Error('Không tải được bộ nhận diện phát âm.'));
-      script.onerror = () => reject(new Error('Không tải được bộ nhận diện phát âm.'));
-      document.head.appendChild(script);
-    });
-    return root.__chillSpeechSdkPromise;
-  }
-
-  async function fetchSpeechToken(accessToken) {
-    const response = await fetch('/api/speech-token', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}) },
-      cache: 'no-store',
-      body: '{}'
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.token || !data.region) throw new Error(data.error || 'Chấm âm vị chưa được cấu hình.');
-    return data;
-  }
-
   async function openMicrophone(onLevel) {
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error('Trình duyệt này không mở được micro. Hãy dùng Safari hoặc Chrome trên HTTPS.');
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-    let context, analyser, raf = 0;
+    if (!root.navigator?.mediaDevices?.getUserMedia) throw new Error('Trình duyệt này không mở được micro. Hãy dùng Safari hoặc Chrome trên HTTPS.');
+    const stream = await root.navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    let context, analyser, raf = 0, currentLevel = 0, stopped = false;
     try {
       const AudioContext = root.AudioContext || root.webkitAudioContext;
-      if (AudioContext && onLevel) {
+      if (AudioContext) {
         context = new AudioContext();
         await context.resume().catch(() => {});
         analyser = context.createAnalyser();
@@ -134,19 +51,24 @@
         context.createMediaStreamSource(stream).connect(analyser);
         const data = new Uint8Array(analyser.fftSize);
         const tick = () => {
+          if (stopped || !analyser) return;
           analyser.getByteTimeDomainData(data);
           let sum = 0;
           for (const value of data) { const delta = (value - 128) / 128; sum += delta * delta; }
-          onLevel(Math.min(1, Math.sqrt(sum / data.length) * 3.2));
-          raf = requestAnimationFrame(tick);
+          currentLevel = Math.min(1, Math.sqrt(sum / data.length) * 3.2);
+          if (onLevel) onLevel(currentLevel);
+          raf = root.requestAnimationFrame(tick);
         };
         tick();
       }
     } catch (_) {}
     return {
       stream,
+      level: () => currentLevel,
       stop() {
-        cancelAnimationFrame(raf);
+        if (stopped) return;
+        stopped = true;
+        root.cancelAnimationFrame(raf);
         stream.getTracks().forEach(track => track.stop());
         if (context) context.close().catch(() => {});
         if (onLevel) onLevel(0);
@@ -154,54 +76,119 @@
     };
   }
 
-  function azureRecognize(sdk, tokenInfo, stream, reference, accent) {
+  function recordAudio(microphone) {
     return new Promise((resolve, reject) => {
-      const speechConfig = sdk.SpeechConfig.fromAuthorizationToken(tokenInfo.token, tokenInfo.region);
-      speechConfig.speechRecognitionLanguage = accent === 'British' ? 'en-GB' : 'en-US';
-      const audioConfig = sdk.AudioConfig.fromStreamInput(stream);
-      const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
-      const config = sdk.PronunciationAssessmentConfig.fromJSON(JSON.stringify({
-        referenceText: reference,
-        gradingSystem: 'HundredMark',
-        granularity: 'Phoneme',
-        enableMiscue: true,
-        phonemeAlphabet: 'IPA',
-        nbestPhonemeCount: 3
-      }));
-      config.applyTo(recognizer);
-      let settled = false;
-      const timer = setTimeout(() => finish(new Error('Chấm phát âm mất quá lâu. Hãy thử lại nơi mạng ổn định hơn.')), 18000);
-      const finish = (error, result) => {
+      if (!root.MediaRecorder) return reject(new Error('Thu âm chưa được hỗ trợ trong trình duyệt này.'));
+      let recorder;
+      try {
+        const types = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'];
+        const mimeType = types.find(type => root.MediaRecorder.isTypeSupported?.(type));
+        recorder = new root.MediaRecorder(microphone.stream, mimeType ? { mimeType } : undefined);
+      } catch (_) { return reject(new Error('Không thể bắt đầu thu âm trên thiết bị này.')); }
+      const chunks = [];
+      const startedAt = Date.now();
+      let firstVoiceAt = 0, lastVoiceAt = 0, timer = 0, settled = false, failure = null;
+      const finish = error => {
+        if (settled) return;
+        failure = error || null;
+        if (recorder.state !== 'inactive') {
+          try { recorder.stop(); } catch (_) { settle(); }
+        } else settle();
+      };
+      const settle = () => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
-        try { recognizer.close(); } catch (_) {}
-        try { audioConfig.close(); } catch (_) {}
-        try { speechConfig.close(); } catch (_) {}
-        try { config.close(); } catch (_) {}
-        if (error) reject(error);
-        else {
-          try { resolve(parseAzureResult(result, reference)); }
-          catch (parseError) { reject(parseError); }
-        }
+        clearInterval(timer);
+        if (failure) return reject(failure);
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size < 1000) return reject(new Error('Chưa thu được âm thanh rõ. Hãy thử lại.'));
+        resolve(blob);
       };
-      recognizer.recognizeOnceAsync(result => {
-        if (result.reason === sdk.ResultReason.Canceled) finish(new Error(result.errorDetails || 'Dịch vụ chấm phát âm đã hủy lượt này.'));
-        else finish(null, result);
-      }, error => finish(new Error(String(error || 'Không nhận được kết quả phát âm.'))));
+      recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
+      recorder.onerror = () => finish(new Error('Không thể thu âm. Hãy thử lại.'));
+      recorder.onstop = settle;
+      try { recorder.start(160); } catch (_) { return reject(new Error('Không thể bắt đầu thu âm trên thiết bị này.')); }
+      timer = setInterval(() => {
+        const now = Date.now();
+        const level = microphone.level();
+        if (level >= 0.045) {
+          if (!firstVoiceAt) firstVoiceAt = now;
+          lastVoiceAt = now;
+        }
+        if ((firstVoiceAt && now - firstVoiceAt > 320 && now - lastVoiceAt > 850) || now - startedAt >= 6800) finish();
+      }, 100);
     });
+  }
+
+  async function toWav16k(blob) {
+    const AudioContext = root.AudioContext || root.webkitAudioContext;
+    if (!AudioContext) throw new Error('Thiết bị chưa hỗ trợ chuyển đổi âm thanh.');
+    const context = new AudioContext();
+    try {
+      const decoded = await context.decodeAudioData(await blob.arrayBuffer());
+      const sourceRate = decoded.sampleRate;
+      const length = Math.max(1, Math.ceil(decoded.duration * 16000));
+      const bytes = new ArrayBuffer(44 + length * 2);
+      const view = new DataView(bytes);
+      const write = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
+      write(0, 'RIFF'); view.setUint32(4, 36 + length * 2, true); write(8, 'WAVE');
+      write(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true); view.setUint32(24, 16000, true); view.setUint32(28, 32000, true);
+      view.setUint16(32, 2, true); view.setUint16(34, 16, true); write(36, 'data'); view.setUint32(40, length * 2, true);
+      const channels = Array.from({ length: decoded.numberOfChannels }, (_, index) => decoded.getChannelData(index));
+      for (let i = 0; i < length; i++) {
+        const position = i * sourceRate / 16000;
+        const left = Math.min(Math.floor(position), channels[0].length - 1);
+        const right = Math.min(left + 1, channels[0].length - 1);
+        const mix = position - left;
+        let sample = 0;
+        for (const channel of channels) sample += channel[left] * (1 - mix) + channel[right] * mix;
+        sample /= channels.length;
+        const value = Math.max(-1, Math.min(1, sample));
+        view.setInt16(44 + i * 2, value < 0 ? value * 32768 : value * 32767, true);
+      }
+      return new Blob([bytes], { type: 'audio/wav' });
+    } finally {
+      context.close().catch(() => {});
+    }
+  }
+
+  async function blobToBase64(blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let binary = '';
+    const step = 0x8000;
+    for (let index = 0; index < bytes.length; index += step) binary += String.fromCharCode(...bytes.subarray(index, index + step));
+    return root.btoa(binary);
+  }
+
+  async function assessOnServer(blob, reference, options) {
+    const audioBase64 = await blobToBase64(blob);
+    const response = await root.fetch('/api/assess-pronunciation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + options.accessToken },
+      body: JSON.stringify({
+        audioBase64,
+        contentType: 'audio/wav',
+        referenceText: reference,
+        referenceIpa: String(options.referenceIpa || ''),
+        accent: options.accent || 'American'
+      }),
+      cache: 'no-store'
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !Number.isFinite(Number(data.score))) throw new Error(data.error || 'Chưa nhận được kết quả từ máy chủ chấm phát âm.');
+    return data;
   }
 
   function browserRecognize(reference, accent) {
     return new Promise((resolve, reject) => {
       const Recognition = root.SpeechRecognition || root.webkitSpeechRecognition;
-      if (!Recognition) return reject(new Error('Trình duyệt này chưa hỗ trợ nhận diện giọng nói. Nếu đang mở trong Zalo/Facebook, hãy chọn Mở bằng Safari hoặc Chrome mới nhất.'));
+      if (!Recognition) return reject(new Error('Chấm phát âm trực tuyến chưa sẵn sàng và trình duyệt không hỗ trợ nhận diện giọng nói. Hãy thử lại sau.'));
       const recognition = new Recognition();
       recognition.lang = accent === 'British' ? 'en-GB' : 'en-US';
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
       let done = false;
-      const timer = setTimeout(() => { try { recognition.stop(); } catch (_) {} finish(new Error('Không nghe rõ giọng nói. Hãy thử lại ở nơi yên tĩnh hơn.')); }, 9000);
       const finish = (error, transcript) => {
         if (done) return;
         done = true;
@@ -209,9 +196,10 @@
         if (error) reject(error);
         else {
           const aligned = alignText(reference, transcript);
-          resolve({ ...aligned, accuracy: aligned.score, completeness: aligned.score, transcript, phonemes: [], source: 'browser-transcript', note: 'Ước lượng từ bản nhận diện của trình duyệt; đây không phải điểm chấm âm vị.' });
+          resolve({ ...aligned, accuracy: aligned.score, completeness: aligned.score, transcript, phonemes: [], source: 'browser-fallback', note: 'Ước lượng từ nhận diện của trình duyệt; đây không phải điểm chấm âm vị.' });
         }
       };
+      const timer = setTimeout(() => { try { recognition.stop(); } catch (_) {} finish(new Error('Không nghe rõ giọng nói. Hãy thử lại ở nơi yên tĩnh hơn.')); }, 9000);
       recognition.onresult = event => finish(null, event.results?.[0]?.[0]?.transcript || '');
       recognition.onerror = event => finish(new Error(event.error === 'not-allowed' ? 'Bạn chưa cấp quyền micro. Hãy bật quyền trong cài đặt trình duyệt; nếu đang mở trong Zalo/Facebook, hãy mở trang bằng Safari hoặc Chrome.' : event.error === 'audio-capture' ? 'Không tìm thấy micro trên thiết bị.' : 'Trình duyệt chưa nhận rõ từ vừa đọc. Hãy thử lại.'));
       recognition.onend = () => { if (!done) finish(new Error('Không nghe thấy câu trả lời. Hãy thử lại.')); };
@@ -222,28 +210,24 @@
   async function assess(reference, options = {}) {
     const word = String(reference || '').trim();
     if (!word) throw new Error('Không tìm thấy từ cần đọc.');
+    if (!options.accessToken) return browserRecognize(word, options.accent);
     const onLevel = typeof options.onLevel === 'function' ? options.onLevel : null;
-    let tokenInfo = null;
-    try { tokenInfo = await fetchSpeechToken(options.accessToken || ''); } catch (_) {}
     let microphone = null;
     try {
       microphone = await openMicrophone(onLevel);
-      if (tokenInfo) {
-        try {
-          const sdk = await loadSpeechSDK();
-          return await azureRecognize(sdk, tokenInfo, microphone.stream, word, options.accent);
-        } catch (_) {
-          // Azure is optional until the Vercel Speech resource has been configured; use a clearly labeled transcript estimate.
-        }
-      }
-      return await browserRecognize(word, options.accent);
+      const recording = await recordAudio(microphone);
+      const wav = await toWav16k(recording);
+      return await assessOnServer(wav, word, options);
     } catch (error) {
-      if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') throw new Error('Micro chưa được cấp quyền. Hãy bật quyền Micro và dùng kết nối HTTPS. Nếu đang mở trong Zalo/Facebook, hãy chọn Mở bằng Safari hoặc Chrome.');
-      throw error;
+      if (error?.name === 'NotAllowedError' || error?.name === 'SecurityError') {
+        throw new Error('Micro chưa được cấp quyền. Hãy bật quyền Micro và dùng kết nối HTTPS. Nếu đang mở trong Zalo/Facebook, hãy chọn Mở bằng Safari hoặc Chrome.');
+      }
+      if (/Chưa cấp quyền micro|không tìm thấy micro/i.test(String(error?.message || ''))) throw error;
     } finally {
       microphone?.stop();
     }
+    return browserRecognize(word, options.accent);
   }
 
-  root.ChillPronunciation = { assess, alignText, loadSpeechSDK };
+  root.ChillPronunciation = { assess, alignText };
 })(window);
