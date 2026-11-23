@@ -82,10 +82,11 @@ body.ux { font-family: var(--ux-font); }
 .account-menu-wrap.u037:has(.u037-options) { display: inline-flex; align-items: center; gap: 7px; }
 .u037-options { width: 36px; min-width: 36px; height: 36px; border: 1px solid var(--ux-line); border-radius: 50%; color: var(--ux-ink-2); background: var(--ux-surface); }
 .u037-options svg { width: 18px; height: 18px; fill: currentColor; }
-.account-pill.u274-btn { min-width: 108px; justify-content: center; padding-inline: 12px; background: var(--color-accent); color: var(--color-accent-ink); }
+.account-pill.u274-btn { min-width: 144px; min-height: 52px; justify-content: center; padding: 7px 14px; background: var(--color-accent); color: var(--color-accent-ink); }
 .account-pill.u274-btn .account-avatar,.account-pill.u274-btn .account-chevron { display: none; }
-.account-pill.u274-btn .account-copy { flex: 1; text-align: center; }
-.account-pill.u274-btn .account-copy small { display: block; margin-top: -2px; font-size: 10px; opacity: .78; }
+.account-pill.u274-btn .account-copy { display: grid; flex: 1; gap: 4px; text-align: center; line-height: 1.25; }
+.account-pill.u274-btn .account-copy strong { max-width: none; font-size: 13px; line-height: 1.25; }
+.account-pill.u274-btn .account-copy small { display: block; margin-top: 0; font-size: 11px; line-height: 1.3; opacity: .82; }
 .account-dropdown.u037-menu button[onclick*="openAuthModal"] { display: none; }
 .account-menu-wrap.u037 .account-pill { transition: transform 220ms var(--ux-spring), box-shadow 220ms var(--ux-ease), border-color 220ms var(--ux-ease); }
 .account-menu-wrap.u037 .account-pill:hover { transform: translateY(-1px); border-color: oklch(48.98% .1461 270.4 / .34); box-shadow: 0 6px 15px oklch(20% .014 255 / .1); }
@@ -94,6 +95,12 @@ body.ux { font-family: var(--ux-font); }
 .account-dropdown.u037-menu button { transition: transform 160ms var(--ux-ease), background-color 160ms var(--ux-ease), color 160ms var(--ux-ease); }
 .account-dropdown.u037-menu button:hover { transform: translateX(3px); }
 .account-dropdown.u037-menu button:focus-visible { outline: 2px solid var(--ux-accent); outline-offset: 1px; }
+
+/* Hard-word rows contain no leading icon, so give the vocabulary and meaning full columns. */
+.hard-word-item { grid-template-columns: minmax(120px,.9fr) minmax(0,2fr) auto; grid-template-areas: "term meaning count"; column-gap: var(--space-lg); row-gap: 6px; padding: 16px 0; }
+.hard-word-item > strong { grid-area: term; min-width: 0; font-size: var(--text-sm); line-height: 1.45; overflow-wrap: anywhere; }
+.hard-word-item > .muted { grid-area: meaning; min-width: 0; line-height: 1.5; }
+.hard-word-item > span:last-child { grid-area: count; margin-left: 0!important; white-space: nowrap; }
 
 /* #355 Cloud state follows the existing Supabase status summary. */
 .settings-sync-summary.u355 { grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 10px; }
@@ -137,6 +144,8 @@ body.ux { font-family: var(--ux-font); }
 
 @media (max-width: 620px) {
   .account-dropdown.u037-menu { right: 0; max-width: calc(100vw - 20px); }
+  .account-pill.u274-btn { min-width: 126px; padding-inline: 10px; }
+  .hard-word-item { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "term count" "meaning count"; column-gap: var(--space-sm); }
   .u036-rules { gap: 4px 7px; font-size: 10px; }
   .auth-tabs.u039-tabs .auth-tab { font-size: 11px; }
 }
