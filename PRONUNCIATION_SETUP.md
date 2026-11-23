@@ -1,22 +1,26 @@
-# Cấu hình chấm phát âm chính xác
+# Cấu hình chấm phát âm Hugging Face
 
-Chill English Quiz có thể chạy ở hai chế độ:
+Ứng dụng gửi bản thu âm WAV mono 16 kHz tới API trên Vercel. Khóa Hugging Face chỉ được đọc ở phía máy chủ; trình duyệt không nhận khóa này. Khi API hoặc khóa chưa sẵn sàng, ứng dụng dùng nhận diện giọng nói tích hợp của trình duyệt và ghi rõ điểm đó là ước lượng.
 
-- **Azure Speech:** trả điểm phát âm theo âm vị. Cần một Speech resource và hai biến môi trường riêng tư trên Vercel.
-- **Dự phòng trên trình duyệt:** dùng nhận dạng giọng nói và so khớp từ. Điểm chỉ là ước lượng, không đánh giá chính xác từng âm.
+## 1. Tạo Hugging Face token
 
-## Thêm khóa vào Vercel
+1. Mở [Hugging Face Access Tokens](https://huggingface.co/settings/tokens) và tạo token có quyền **Inference Providers**.
+2. Sao chép token để nhập vào phần Environment Variables của Vercel. Không thêm token vào mã nguồn hoặc gửi trong ứng dụng.
 
-1. Trong Azure Portal, tạo một **Speech** resource. Mở trang **Keys and Endpoint** và lấy một key cùng region của resource.
-2. Trong Vercel, mở project **chill-english-quiz** → **Settings** → **Environment Variables**.
-3. Thêm:
-   - `AZURE_SPEECH_KEY` = key của Speech resource
-   - `AZURE_SPEECH_REGION` = region, ví dụ `eastus`
-4. Chọn môi trường **Production** (và **Preview** nếu muốn thử bản xem trước), lưu lại rồi redeploy project.
-5. Đăng nhập Chill English Quiz, mở **Cài đặt** và dùng nút **Kiểm tra kết nối phát âm**.
+## 2. Thêm biến trên Vercel
 
-**Không đưa key vào GitHub, mã giao diện hoặc tin nhắn.** Endpoint kiểm tra đăng nhập Supabase trước khi cấp token Azure ngắn hạn cho trình duyệt. Nếu chưa cấu hình Azure, app tự chuyển sang chế độ dự phòng và sẽ ghi rõ điểm đó chỉ là ước lượng.
+Trong dự án **chill-english-quiz**, mở **Settings → Environment Variables**, thêm:
 
-## Ghi chú điểm số
+- Name: **HF_TOKEN**
+- Value: token vừa tạo
+- Environments: Production và Preview
 
-Mức đạt mặc định là **75/100**. Điểm tổng trong chế độ Azure tính theo **85% độ chính xác + 15% độ đầy đủ**. Điểm âm vị là phản hồi hỗ trợ luyện tập; phần tô màu từng chữ cái chỉ là ánh xạ gần đúng từ các âm vị.
+Lưu biến rồi triển khai lại dự án. Có thể vào **Cài đặt → Chấm phát âm → Kiểm tra kết nối** để xác nhận máy chủ đã sẵn sàng.
+
+## 3. Luồng chấm điểm
+
+- Khi thẻ có IPA, API dùng **facebook/wav2vec2-lv-60-espeak-cv-ft** để nhận diện âm vị và so sánh với IPA tham chiếu.
+- Khi thẻ chưa có IPA hoặc mô hình âm vị không khả dụng, API dùng **openai/whisper-large-v3-turbo** để nhận diện từ và trả về điểm ước lượng có nhãn riêng.
+- Nếu Hugging Face chưa cấu hình hoặc không truy cập được, giao diện thử nhận diện bằng trình duyệt.
+
+Các endpoint **/api/assess-pronunciation** và **/api/speech-token** yêu cầu phiên Supabase hợp lệ. Không lưu **HF_TOKEN** trong HTML, JavaScript phía trình duyệt hay kho Git.
