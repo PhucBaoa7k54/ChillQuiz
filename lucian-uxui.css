@@ -1,0 +1,149 @@
+/* Lucian UX/UI Prompt #003 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#003 */
+/* Lucian UX/UI Prompt #008 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#008 */
+/* Lucian UX/UI Prompt #009 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#009 */
+/* Lucian UX/UI Prompt #012 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#012 */
+/* Lucian UX/UI Prompt #036 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#036 */
+/* Lucian UX/UI Prompt #037 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#037 */
+/* Lucian UX/UI Prompt #039 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#039 */
+/* Lucian UX/UI Prompt #062 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#062 */
+/* Lucian UX/UI Prompt #274 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#274 */
+/* Lucian UX/UI Prompt #355 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#355 */
+
+body.ux { font-family: var(--ux-font); }
+.ux :where(button,input,textarea,select) { font-family: var(--ux-font); }
+
+/* #009 Rolling label button, adapted to Chill English's existing gold CTA. */
+.btn.u009-btn,
+.btn.u009-btn:visited {
+  position: relative;
+  isolation: isolate;
+  transition: transform 220ms var(--ux-ease), box-shadow 220ms var(--ux-ease),
+    background-color 220ms var(--ux-ease), border-color 220ms var(--ux-ease), color 220ms var(--ux-ease);
+}
+.btn.u009-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 7px 16px oklch(20% .014 255 / .12); }
+.btn.u009-btn:active:not(:disabled) { transform: translateY(0) scale(.985); }
+.u009-word { position: relative; display: inline-block; overflow: hidden; vertical-align: -.08em; line-height: 1.3; }
+.u009-face { display: inline-block; transition: transform 280ms var(--ux-spring); }
+.u009-word::after {
+  position: absolute; inset: 100% 0 auto; display: block; content: attr(data-label);
+  color: inherit; white-space: pre; transition: transform 280ms var(--ux-spring); transform: translateY(0);
+}
+.btn.u009-btn:hover:not(:disabled) .u009-face { transform: translateY(-130%); }
+.btn.u009-btn:hover:not(:disabled) .u009-word::after { transform: translateY(-100%); }
+.u274-btn { position: relative; overflow: hidden; transition: min-width 300ms var(--ux-spring), border-radius 300ms var(--ux-spring), transform 220ms var(--ux-ease); }
+.u274-btn::after {
+  position: absolute; inset: 3px; border: 1px solid oklch(98.8% .007 95 / .86); border-radius: inherit;
+  content: ""; opacity: 0; transform: scale(.92); transition: opacity 180ms ease, transform 300ms var(--ux-spring); pointer-events: none;
+}
+.u274-btn[data-ux-morph="form"] { min-width: 150px; border-radius: 16px; transform: scale(.97); }
+.u274-btn[data-ux-morph="form"]::after { opacity: 1; transform: scale(1); }
+.auth-modal.u062 { transform-origin: top right; animation: u274-expand 380ms var(--ux-spring) both; }
+@keyframes u274-expand { from { opacity: 0; transform: translateY(-10px) scale(.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* #062 Sign-in feedback stays attached to the real Supabase form states. */
+.auth-modal.u062 { border-color: oklch(87% .016 95 / .78); box-shadow: 0 28px 80px oklch(20% .014 255 / .16); }
+.auth-modal.u062.bad { border-color: oklch(58% .19 27 / .55); }
+.auth-modal.u062.shake { animation: u062-shake 380ms var(--ux-ease) both; }
+@keyframes u062-shake { 0%,100% { transform: translateX(0); } 22% { transform: translateX(-7px); } 45% { transform: translateX(6px); } 68% { transform: translateX(-4px); } 84% { transform: translateX(2px); } }
+.auth-modal.u062.busy .auth-submit { cursor: progress; }
+.auth-modal.u062.busy .auth-submit .spinner { animation: u062-spin .8s linear infinite; }
+@keyframes u062-spin { to { transform: rotate(360deg); } }
+.auth-modal.u062.ok .auth-submit { box-shadow: 0 0 0 4px oklch(82% .15 152 / .22); }
+.auth-form-panel { transition: border-color 180ms var(--ux-ease), box-shadow 180ms var(--ux-ease); }
+
+/* #039 Sliding pill tabs: preserves the existing tab buttons and keyboard behavior. */
+.auth-tabs.u039-tabs { position: relative; isolation: isolate; overflow: hidden; background: var(--ux-surface-2); border-color: var(--ux-line); }
+.auth-tabs.u039-tabs::before { content: none; }
+.u039-pill {
+  position: absolute; z-index: 0; inset: 4px auto 4px 4px; width: calc(50% - 2px);
+  border: 1px solid oklch(87% .016 95 / .72); border-radius: 999px; background: var(--ux-surface);
+  box-shadow: 0 3px 9px oklch(20% .014 255 / .08); transition: transform 360ms var(--ux-spring);
+}
+.auth-tabs[data-active="signup"] .u039-pill { transform: translateX(calc(100% + 4px)); }
+.auth-tabs.u039-tabs .auth-tab { z-index: 1; color: var(--ux-ink-2); transition: color 180ms var(--ux-ease), transform 180ms var(--ux-ease); }
+.auth-tabs.u039-tabs .auth-tab[aria-selected="true"] { color: var(--ux-ink); }
+.auth-tabs.u039-tabs .auth-tab:active { transform: scale(.97); }
+
+/* #036 Password meter is guidance only; existing eight-character and match rules stay authoritative. */
+.auth-field.u036 .u036-meter { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 5px; margin-top: 9px; }
+.u036-meter span { height: 4px; border-radius: 99px; background: var(--ux-line-2); transition: background-color 180ms var(--ux-ease), transform 180ms var(--ux-ease); }
+.u036-meter[data-level="1"] span:nth-child(-n+1) { background: var(--ux-danger); }
+.u036-meter[data-level="2"] span:nth-child(-n+2) { background: var(--ux-warn); }
+.u036-meter[data-level="3"] span:nth-child(-n+3) { background: var(--color-accent-deep); }
+.u036-meter[data-level="4"] span:nth-child(-n+4) { background: var(--ux-mint); }
+.u036-rules { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 6px; color: var(--ux-ink-3); font-size: 11px; }
+.u036-rules span { display: inline-flex; align-items: center; gap: 4px; transition: color 180ms var(--ux-ease); }
+.u036-rules span::before { display: grid; place-items: center; width: 14px; height: 14px; border: 1px solid var(--ux-line-2); border-radius: 50%; content: ""; font-size: 9px; }
+.u036-rules span.is-met { color: var(--ux-mint); }
+.u036-rules span.is-met::before { border-color: currentColor; content: "✓"; }
+
+/* #037 Existing account menu, with its real account/settings/sign-out actions. */
+.account-menu-wrap.u037 { position: relative; }
+.account-menu-wrap.u037:has(.u037-options) { display: inline-flex; align-items: center; gap: 7px; }
+.u037-options { width: 36px; min-width: 36px; height: 36px; border: 1px solid var(--ux-line); border-radius: 50%; color: var(--ux-ink-2); background: var(--ux-surface); }
+.u037-options svg { width: 18px; height: 18px; fill: currentColor; }
+.account-pill.u274-btn { min-width: 108px; justify-content: center; padding-inline: 12px; background: var(--color-accent); color: var(--color-accent-ink); }
+.account-pill.u274-btn .account-avatar,.account-pill.u274-btn .account-chevron { display: none; }
+.account-pill.u274-btn .account-copy { flex: 1; text-align: center; }
+.account-pill.u274-btn .account-copy small { display: block; margin-top: -2px; font-size: 10px; opacity: .78; }
+.account-dropdown.u037-menu button[onclick*="openAuthModal"] { display: none; }
+.account-menu-wrap.u037 .account-pill { transition: transform 220ms var(--ux-spring), box-shadow 220ms var(--ux-ease), border-color 220ms var(--ux-ease); }
+.account-menu-wrap.u037 .account-pill:hover { transform: translateY(-1px); border-color: oklch(48.98% .1461 270.4 / .34); box-shadow: 0 6px 15px oklch(20% .014 255 / .1); }
+.account-dropdown.u037-menu:not([hidden]) { animation: u037-open 220ms var(--ux-spring) both; transform-origin: top right; }
+@keyframes u037-open { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.account-dropdown.u037-menu button { transition: transform 160ms var(--ux-ease), background-color 160ms var(--ux-ease), color 160ms var(--ux-ease); }
+.account-dropdown.u037-menu button:hover { transform: translateX(3px); }
+.account-dropdown.u037-menu button:focus-visible { outline: 2px solid var(--ux-accent); outline-offset: 1px; }
+
+/* #355 Cloud state follows the existing Supabase status summary. */
+.settings-sync-summary.u355 { grid-template-columns: 34px minmax(0,1fr); align-items: center; gap: 10px; }
+.settings-sync-summary.u355 > .sync-dot { display: grid; place-items: center; width: 34px; height: 34px; flex-basis: 34px; margin: 0; border-radius: 12px; color: var(--ux-accent); background: var(--ux-accent-soft); box-shadow: none; font-style: normal; }
+.settings-sync-summary.u355 > .sync-dot::before { content: "☁"; font-size: 20px; line-height: 1; }
+.settings-sync-summary.u355[data-ux-state="sync"] > .sync-dot::before { content: "↻"; animation: u355-turn 1s linear infinite; }
+.settings-sync-summary.u355[data-ux-state="saved"] > .sync-dot::after { position: absolute; margin: 15px 0 0 15px; color: var(--ux-mint); font-size: 11px; content: "✓"; }
+.settings-sync-summary.u355[data-ux-state="local"] > .sync-dot { color: var(--ux-ink-3); background: var(--ux-surface-3); }
+@keyframes u355-turn { to { transform: rotate(360deg); } }
+
+/* #003 Hold-to-delete uses the app's existing final confirmation buttons. */
+.u003-btn { position: relative; isolation: isolate; overflow: hidden; }
+.u003-btn::before { position: absolute; z-index: -1; inset: 0; border-radius: inherit; background: oklch(55% .2 27 / .3); content: ""; transform: scaleX(var(--u003-progress,0)); transform-origin: left center; }
+.u003-btn.is-holding { outline: 2px solid oklch(55% .2 27 / .34); outline-offset: 2px; }
+.u003-btn[data-hold-ready="true"] { box-shadow: 0 0 0 4px oklch(55% .2 27 / .18); }
+.u003-hint { position: absolute!important; width: 1px!important; height: 1px!important; padding: 0!important; margin: -1px!important; overflow: hidden!important; clip: rect(0,0,0,0)!important; white-space: nowrap!important; border: 0!important; }
+
+/* #008 Export buttons acknowledge the actual existing download action. */
+.u008-btn { position: relative; }
+.u008-btn.is-copied::after {
+  position: absolute; z-index: 5; right: 0; bottom: calc(100% + 7px); padding: 5px 9px;
+  border: 1px solid oklch(82% .15 152 / .35); border-radius: 999px; color: oklch(35% .1 155);
+  background: oklch(96% .035 152); box-shadow: 0 4px 12px oklch(20% .014 255 / .1);
+  content: "✓ Đã tải"; font-size: 11px; white-space: nowrap; animation: u008-pop 200ms var(--ux-spring) both;
+}
+@keyframes u008-pop { from { opacity: 0; transform: translateY(4px) scale(.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* #012 Favorite ribbon reflects starCard()'s real saved state. */
+.u012-btn { position: relative; padding-right: 34px!important; transition: transform 220ms var(--ux-spring), box-shadow 220ms var(--ux-ease), color 180ms var(--ux-ease); }
+.u012-btn::after { position: absolute; top: -1px; right: 10px; width: 11px; height: 16px; background: var(--ux-line-2); clip-path: polygon(12% 0,88% 0,88% 100%,50% 76%,12% 100%); content: ""; transition: height 220ms var(--ux-spring), background-color 180ms var(--ux-ease); }
+.u012-btn.is-on::after { height: 20px; background: var(--color-accent-deep); }
+.u012-btn.is-burst { animation: u012-burst 440ms var(--ux-spring); }
+@keyframes u012-burst { 0% { transform: scale(1); } 42% { transform: scale(1.06) rotate(-1deg); } 100% { transform: scale(1); } }
+
+/* Shared motion and keyboard focus for every requested interaction. */
+.btn.u009-btn:focus-visible,.nav:focus-visible,.circlebtn:focus-visible,.answer:focus-visible,.matchtile:focus-visible { outline: 3px solid var(--ux-accent); outline-offset: 3px; }
+.nav,.circlebtn,.answer,.matchtile { transition: transform 200ms var(--ux-spring), box-shadow 200ms var(--ux-ease), background-color 180ms var(--ux-ease), border-color 180ms var(--ux-ease), color 180ms var(--ux-ease); }
+.nav:hover:not(:disabled),.circlebtn:hover:not(:disabled),.answer:hover:not(:disabled),.matchtile:hover:not(:disabled) { transform: translateY(-2px); }
+.nav:active:not(:disabled),.circlebtn:active:not(:disabled),.answer:active:not(:disabled),.matchtile:active:not(:disabled) { transform: scale(.975); }
+.matchtile.is-matched,.answer.is-selected { transition-duration: 180ms; }
+
+@media (max-width: 620px) {
+  .account-dropdown.u037-menu { right: 0; max-width: calc(100vw - 20px); }
+  .u036-rules { gap: 4px 7px; font-size: 10px; }
+  .auth-tabs.u039-tabs .auth-tab { font-size: 11px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ux,.ux *,.ux *::before,.ux *::after,
+  .u009-word::after,.u009-face,.u274-btn,.auth-modal.u062,.u039-pill,
+  .account-dropdown.u037-menu,.settings-sync-summary.u355 > .sync-dot::before,
+  .u003-btn,.u008-btn::after,.u012-btn,.u012-btn::after,
+  .nav,.circlebtn,.answer,.matchtile { animation-duration: .001ms!important; animation-iteration-count: 1!important; transition-duration: .001ms!important; scroll-behavior: auto!important; }
+}
