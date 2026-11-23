@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/assess-pronunciation.js": {
+      "maxDuration": 45
+    }
+  }
+}
