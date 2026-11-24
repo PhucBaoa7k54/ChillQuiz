@@ -1,4 +1,4 @@
-const CACHE = 'chill-english-shell-v11';
+const CACHE = 'chill-english-shell-v12';
 const SHELL = ['./index.html', './pronunciationService.js', './appEnhancements.js', './lucian-uxui.css', './lucian-uxui.js', './manifest.webmanifest', './icon.svg', './apple-touch-icon.png', './favicon-32x32.png', './favicon-16x16.png', './icon-192.png', './icon-512.png', './og-image.png'];
 
 self.addEventListener('install', event => {

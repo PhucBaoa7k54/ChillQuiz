@@ -175,11 +175,12 @@ body.ux { font-family: var(--ux-font); }
 .account-pill.u274-btn { min-width: 124px; min-height: 46px; padding: 6px 12px; border: 1px solid var(--color-rule); background: var(--color-card); color: var(--color-ink); box-shadow: 0 2px 0 var(--color-rule); }
 .account-pill:not(.u274-btn) .account-copy { min-width: 0; display: flex; align-items: center; gap: 8px; }
 .account-pill:not(.u274-btn) .account-copy strong { display: block; max-width: min(16rem,24vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-pill.is-connected:not(.u274-btn) .account-copy::after,.account-pill.is-pending:not(.u274-btn) .account-copy::after,.account-pill.is-error:not(.u274-btn) .account-copy::after { content: ""; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; }
-.account-pill.is-connected:not(.u274-btn) .account-copy::after { background: var(--color-success); box-shadow: 0 0 0 3px var(--color-success-soft); }
-.account-pill.is-pending:not(.u274-btn) .account-copy::after { background: var(--color-accent); }
-.account-pill.is-error:not(.u274-btn) .account-copy::after { background: var(--color-error); }
-@media (max-width:42rem) { .account-pill:not(.u274-btn) .account-copy strong { max-width: min(42vw,12rem); } }
+.account-avatar { position: relative; }
+.account-pill.is-connected:not(.u274-btn) .account-avatar::after,.account-pill.is-pending:not(.u274-btn) .account-avatar::after,.account-pill.is-error:not(.u274-btn) .account-avatar::after { content: ""; position: absolute; right: 0; bottom: 0; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; box-sizing: content-box; }
+.account-pill.is-connected:not(.u274-btn) .account-avatar::after { background: var(--color-success); }
+.account-pill.is-pending:not(.u274-btn) .account-avatar::after { background: var(--color-accent); }
+.account-pill.is-error:not(.u274-btn) .account-avatar::after { background: var(--color-error); }
+@media (max-width:42rem) { .account-pill:not(.u274-btn) .account-copy strong { display: none; } }
 
 /* Native-quality polish for the existing vanilla app */
 h1,h2,h3,h4 { line-height: 1.28; text-wrap: balance; }
@@ -366,3 +367,23 @@ button:disabled:not(.wrong):not(.matched-out),[aria-disabled="true"]:not(.wrong)
 
 button,.nav,.account-pill,[role="button"] { min-width: 44px; min-height: 44px; }
 .review-reminder-toast button,.u037-options,.streak-calendar-button { min-width: 44px; min-height: 44px; }
+
+
+/* Mobile header and home layout fixes */
+.topbar button,#syncAccountControl,.topbar .account-pill { flex-shrink: 0; }
+.topbar .topright { min-width: 0; }
+.topbar button svg { flex: 0 0 auto; width: 20px; height: 20px; }
+.topbar button .icon-plus { flex-basis: 16px; width: 16px; height: 16px; }
+.topbar .account-chevron { flex-basis: 14px; width: 14px; height: 14px; }
+.account-pill:not(.u274-btn) .account-copy strong { max-width: 160px; }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; max-width: 100%; overflow-x: clip; }
+.empty .btn { flex-direction: column; align-items: center; justify-content: center; }
+.empty .btn > svg { flex: 0 0 24px; width: 24px; height: 24px; }
+@media (max-width:42rem) {
+  .account-pill.u274-btn { min-width: 104px; padding-inline: 8px; }
+  .content { width: 100%; max-width: 100%; overflow-x: clip; box-sizing: border-box; }
+  .greeting > div { width: 100%; max-width: 100%; min-width: 0; }
+  .greeting h1,.greeting .sub { width: 100%; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .greeting h1 { font-size: var(--text-xl); line-height: 1.375; }
+}
+@media (min-width:42.001rem) { .greeting h1 { font-size: var(--text-3xl,2rem); line-height: 1.375; } }
