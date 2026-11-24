@@ -10,6 +10,24 @@
   const holdTargets = '#confirmDeleteSet, #confirmClearData';
   let refreshQueued = false;
 
+  function prepareNavIndicator() {
+    const sidebar = document.getElementById('appSidebar');
+    if (!sidebar) return;
+    let indicator = sidebar.querySelector('.nav-indicator');
+    if (!indicator) {
+      indicator = document.createElement('span');
+      indicator.className = 'nav-indicator';
+      indicator.setAttribute('aria-hidden', 'true');
+      sidebar.prepend(indicator);
+    }
+    const active = sidebar.querySelector('.nav.active');
+    if (!active) { indicator.style.opacity = '0'; return; }
+    indicator.style.width = active.offsetWidth + 'px';
+    indicator.style.height = active.offsetHeight + 'px';
+    indicator.style.transform = 'translate3d(' + active.offsetLeft + 'px,' + active.offsetTop + 'px,0)';
+    indicator.style.opacity = '1';
+  }
+
   function prepareRollingLabel(button) {
     if (!button.matches('.btn, .nav, .circlebtn, .answer, .matchtile')) return;
     button.classList.add('u009-btn');
@@ -231,6 +249,7 @@
 
   function refresh() {
     refreshQueued = false;
+    prepareNavIndicator();
     prepareAccountControl();
     prepareCloudStatus();
     prepareAuthModal();
@@ -349,6 +368,7 @@
     });
   });
 
+  window.addEventListener('resize', scheduleRefresh, { passive: true });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', refresh, { once: true });
   refresh();
 })();
