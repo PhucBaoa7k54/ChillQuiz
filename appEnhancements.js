@@ -71,7 +71,7 @@
   function createBackupDocument(data) {
     return {
       format: 'chill-english-backup',
-      version: 2,
+      version: 3,
       backupId: id(),
       exportedAt: new Date().toISOString(),
       data: data || accountPayload()
@@ -97,9 +97,57 @@
     return date.getUTCFullYear() === parts[0] && date.getUTCMonth() === parts[1] - 1 && date.getUTCDate() === parts[2];
   }
 
+  function deriveStreakFields(activity, now) {
+    const todayKey = localDateKey(now || new Date());
+    const studyDates = new Set((Array.isArray(activity) ? activity : [])
+      .map(item => String(item && item.date || '').slice(0, 10))
+      .filter(date => validDateKey(date) && date <= todayKey));
+    if (!studyDates.size) return { streakCount: 0, lastStudyDate: null, weekendFreezeUsed: false };
+    const sorted = Array.from(studyDates).sort();
+    const weekendMisses = new Set();
+    let streakCount = 0;
+    let alive = false;
+    let lastStudyDate = null;
+    const dayStates = {};
+    for (let cursor = sorted[0]; cursor <= todayKey; cursor = shiftLocalDate(cursor, 1)) {
+      if (studyDates.has(cursor)) {
+        streakCount = alive ? streakCount + 1 : 1;
+        alive = true;
+        lastStudyDate = cursor;
+        dayStates[cursor] = 'learned';
+      } else if (cursor === todayKey) dayStates[cursor] = 'today';
+      else if (alive) {
+        const weekday = localDateFromKey(cursor).getDay();
+        if (weekday === 0 || weekday === 6) {
+          const saturday = weekday === 6 ? cursor : shiftLocalDate(cursor, -1);
+          if (!weekendMisses.has(saturday)) {
+            weekendMisses.add(saturday);
+            dayStates[cursor] = 'frozen';
+          } else {
+            alive = false;
+            streakCount = 0;
+            dayStates[cursor] = 'missed';
+          }
+        } else {
+          alive = false;
+          streakCount = 0;
+          dayStates[cursor] = 'missed';
+        }
+      } else dayStates[cursor] = 'missed';
+    }
+    const todayWeekday = localDateFromKey(todayKey).getDay();
+    const weekendStart = todayWeekday === 6 ? todayKey : shiftLocalDate(todayKey, -1);
+    const status = studyDates.has(todayKey) ? 'learned' : alive && (dayStates[shiftLocalDate(todayKey, -1)] === 'frozen' || ((todayWeekday === 0 || todayWeekday === 6) && !weekendMisses.has(weekendStart))) ? 'frozen' : alive ? 'ash' : 'new';
+    return {
+      streakCount: alive ? streakCount : 0,
+      lastStudyDate,
+      weekendFreezeUsed: status === 'frozen'
+    };
+  }
+
   function validateBackupData(raw) {
     if (raw && raw.format && raw.format !== 'chill-english-backup') throw new Error('Tệp không phải bản sao lưu Chill English Quiz.');
-    if (raw && raw.format && (!Number.isInteger(Number(raw.version)) || Number(raw.version) < 1 || Number(raw.version) > 2)) {
+    if (raw && raw.format && (!Number.isInteger(Number(raw.version)) || Number(raw.version) < 1 || Number(raw.version) > 3)) {
       throw new Error('Phiên bản bản sao lưu không được hỗ trợ.');
     }
     const source = raw && raw.format === 'chill-english-backup' ? raw.data : (raw && (raw.payload || raw));
@@ -194,6 +242,19 @@
       }
       return Object.assign({}, item);
     });
+    const derivedStreak = deriveStreakFields(activity);
+    if (source.streakCount !== undefined && (!Number.isSafeInteger(Number(source.streakCount)) || Number(source.streakCount) < 0 || Number(source.streakCount) > 100000)) {
+      throw new Error('Số ngày streak trong bản sao lưu không hợp lệ.');
+    }
+    if (source.lastStudyDate !== undefined && source.lastStudyDate !== null && (!validDateKey(source.lastStudyDate) || source.lastStudyDate > today())) {
+      throw new Error('Ngày học gần nhất trong bản sao lưu không hợp lệ.');
+    }
+    if (source.weekendFreezeUsed !== undefined && typeof source.weekendFreezeUsed !== 'boolean') {
+      throw new Error('Trạng thái đóng băng cuối tuần trong bản sao lưu không hợp lệ.');
+    }
+    const streakCount = source.streakCount === undefined ? derivedStreak.streakCount : Number(source.streakCount);
+    const lastStudyDate = source.lastStudyDate || derivedStreak.lastStudyDate;
+    const weekendFreezeUsed = source.weekendFreezeUsed === undefined ? derivedStreak.weekendFreezeUsed : source.weekendFreezeUsed;
     const settings = Object.assign({ target: 15, accent: 'American', speechRate: 1 }, source.settings || {});
     const speechRate = Number(settings.speechRate);
     settings.target = Math.max(1, Number(settings.target) || 15);
@@ -204,6 +265,9 @@
       folders,
       progress,
       activity,
+      streakCount,
+      lastStudyDate: lastStudyDate || null,
+      weekendFreezeUsed,
       favorites: Array.isArray(source.favorites) ? source.favorites.filter(item => typeof item === 'string') : [],
       settings,
       matchRecords: source.matchRecords || [],
@@ -307,6 +371,14 @@
     const mappedMatches = (incoming.matchRecords || []).map(mapSession).filter(Boolean);
     merged.activity = mergeArrayByOccurrence(merged.activity || [], mappedActivity, item => item.sessionId ? 'id:' + item.sessionId : 'legacy:' + JSON.stringify(item));
     merged.matchRecords = mergeArrayByOccurrence(merged.matchRecords || [], mappedMatches, item => item.sessionId ? 'id:' + item.sessionId : 'legacy:' + JSON.stringify(item));
+    const derivedStreak = deriveStreakFields(merged.activity);
+    const streakSources = [current, incoming].filter(item => item && validDateKey(item.lastStudyDate));
+    const latestSourceDate = streakSources.reduce((latest, item) => item.lastStudyDate > latest ? item.lastStudyDate : latest, '');
+    const latestDate = [derivedStreak.lastStudyDate || '', latestSourceDate].reduce((latest, date) => date > latest ? date : latest, '');
+    const sameDateSources = streakSources.filter(item => item.lastStudyDate === latestDate);
+    merged.lastStudyDate = latestDate || null;
+    merged.streakCount = sameDateSources.length ? Math.max(...sameDateSources.map(item => Number(item.streakCount) || 0)) : derivedStreak.streakCount;
+    merged.weekendFreezeUsed = derivedStreak.lastStudyDate === latestDate && derivedStreak.weekendFreezeUsed || sameDateSources.some(item => item.weekendFreezeUsed === true);
     merged.importedBackupIds = Array.from(new Set([...(merged.importedBackupIds || []), ...(incoming.importedBackupIds || []), ...(backupId ? [backupId] : [])]));
     return { data: merged, addedSets, mergedSets };
   }
@@ -956,6 +1028,574 @@
     state.settings.speechRate = SPEECH_RATES.includes(rate) ? rate : 1;
     original.saveSettings();
   };
+
+  function localDayGap(from, to) {
+    const a = from.split('-').map(Number);
+    const b = to.split('-').map(Number);
+    return Math.round((Date.UTC(b[0], b[1] - 1, b[2]) - Date.UTC(a[0], a[1] - 1, a[2])) / 86400000);
+  }
+
+  function currentStreakStatus(now) {
+    const todayKey = localDateKey(now || new Date());
+    const activityDates = (state.activity || []).map(item => String(item && item.date || '').slice(0, 10))
+      .filter(date => validDateKey(date) && date <= todayKey).sort();
+    const latestActivity = activityDates[activityDates.length - 1] || null;
+    if (latestActivity && (!validDateKey(state.lastStudyDate) || latestActivity > state.lastStudyDate)) {
+      const inferred = deriveStreakFields(state.activity, now || new Date());
+      state.lastStudyDate = inferred.lastStudyDate;
+      state.streakCount = inferred.streakCount;
+      state.weekendFreezeUsed = inferred.weekendFreezeUsed;
+    }
+
+    let lastStudyDate = validDateKey(state.lastStudyDate) ? state.lastStudyDate : null;
+    let streakCount = Number.isSafeInteger(Number(state.streakCount)) ? Math.max(0, Number(state.streakCount)) : 0;
+    let status = 'new';
+    if (lastStudyDate && lastStudyDate > todayKey) {
+      lastStudyDate = null;
+      streakCount = 0;
+      state.lastStudyDate = null;
+      state.streakCount = 0;
+      state.weekendFreezeUsed = false;
+    } else if (lastStudyDate === todayKey) {
+      streakCount = Math.max(1, streakCount);
+      state.streakCount = streakCount;
+      state.weekendFreezeUsed = false;
+      status = 'learned';
+    } else if (!lastStudyDate || streakCount === 0) {
+      status = lastStudyDate ? 'broken' : 'new';
+      state.lastStudyDate = lastStudyDate;
+      state.streakCount = 0;
+      state.weekendFreezeUsed = false;
+    } else {
+      const gap = localDayGap(lastStudyDate, todayKey);
+      const missedWeekends = new Set();
+      let broken = gap > 2;
+      for (let offset = 1; !broken && offset < gap; offset++) {
+        const missedDate = shiftLocalDate(lastStudyDate, offset);
+        const weekday = localDateFromKey(missedDate).getDay();
+        if (weekday !== 0 && weekday !== 6) {
+          broken = true;
+          break;
+        }
+        const saturday = weekday === 6 ? missedDate : shiftLocalDate(missedDate, -1);
+        if (missedWeekends.has(saturday)) broken = true;
+        else missedWeekends.add(saturday);
+      }
+      if (broken) {
+        streakCount = 0;
+        state.streakCount = 0;
+        state.weekendFreezeUsed = false;
+        status = 'broken';
+      } else {
+        const todayWeekday = localDateFromKey(todayKey).getDay();
+        const todayIsWeekend = todayWeekday === 0 || todayWeekday === 6;
+        state.weekendFreezeUsed = todayIsWeekend || missedWeekends.size > 0;
+        status = state.weekendFreezeUsed ? 'frozen' : 'ash';
+      }
+    }
+    const calendar = original.calculateStudyStreak(now);
+    return Object.assign({}, calendar, {
+      count: streakCount,
+      status,
+      todayKey,
+      level: window.streakLevelFor(streakCount),
+      lastStudy: lastStudyDate,
+      lastStudyDate,
+      weekendFreezeUsed: !!state.weekendFreezeUsed
+    });
+  }
+
+  function syncStreakMetadata(now, persist) {
+    const before = JSON.stringify([
+      Object.prototype.hasOwnProperty.call(state, 'streakCount') ? state.streakCount : '__missing__',
+      Object.prototype.hasOwnProperty.call(state, 'lastStudyDate') ? state.lastStudyDate : '__missing__',
+      Object.prototype.hasOwnProperty.call(state, 'weekendFreezeUsed') ? state.weekendFreezeUsed : '__missing__'
+    ]);
+    const result = currentStreakStatus(now);
+    const after = JSON.stringify([state.streakCount, state.lastStudyDate, state.weekendFreezeUsed]);
+    if (persist && before !== after) {
+      try { save(); } catch (_) {}
+    }
+    return result;
+  }
+
+  function migrateStreakMetadata() {
+    const before = JSON.stringify([
+      Object.prototype.hasOwnProperty.call(state, 'streakCount') ? state.streakCount : '__missing__',
+      Object.prototype.hasOwnProperty.call(state, 'lastStudyDate') ? state.lastStudyDate : '__missing__',
+      Object.prototype.hasOwnProperty.call(state, 'weekendFreezeUsed') ? state.weekendFreezeUsed : '__missing__'
+    ]);
+    const inferred = deriveStreakFields(state.activity || []);
+    if (!Number.isSafeInteger(state.streakCount) || state.streakCount < 0) state.streakCount = inferred.streakCount;
+    if (state.lastStudyDate === undefined || state.lastStudyDate !== null && !validDateKey(state.lastStudyDate)) state.lastStudyDate = inferred.lastStudyDate;
+    if (typeof state.weekendFreezeUsed !== 'boolean') state.weekendFreezeUsed = inferred.weekendFreezeUsed;
+    if (inferred.lastStudyDate && (!validDateKey(state.lastStudyDate) || inferred.lastStudyDate > state.lastStudyDate)) {
+      state.lastStudyDate = inferred.lastStudyDate;
+      state.streakCount = inferred.streakCount;
+      state.weekendFreezeUsed = inferred.weekendFreezeUsed;
+    }
+    syncStreakMetadata();
+    const after = JSON.stringify([state.streakCount, state.lastStudyDate, state.weekendFreezeUsed]);
+    if (before !== after) {
+      try { save(); } catch (_) {}
+    }
+  }
+
+  const existingAccountPayload = window.accountPayload;
+  if (typeof existingAccountPayload === 'function') {
+    window.accountPayload = function () {
+      syncStreakMetadata();
+      return existingAccountPayload();
+    };
+  }
+
+  const existingRender = window.render;
+  if (typeof existingRender === 'function') {
+    window.render = function (...args) {
+      if (!Number.isSafeInteger(state.streakCount) || state.lastStudyDate === undefined || state.lastStudyDate !== null && !validDateKey(state.lastStudyDate) || typeof state.weekendFreezeUsed !== 'boolean') {
+        syncStreakMetadata(undefined, true);
+      }
+      return existingRender.apply(this, args);
+    };
+  }
+
+  const previousLoadCloudForUser = window.loadCloudForUser;
+  if (typeof previousLoadCloudForUser === 'function') {
+    window.loadCloudForUser = async function (...args) {
+      const loaded = await previousLoadCloudForUser(...args);
+      if (loaded) syncStreakMetadata(undefined, true);
+      return loaded;
+    };
+  }
+
+  window.calculateStudyStreak = currentStreakStatus;
+
+  const previousFlameMarkup = window.streakFlameMarkup;
+  window.streakFlameMarkup = function (level, status) {
+    const stateName = status === true ? 'frozen' : typeof status === 'string' ? status : status === false ? currentStreakStatus().status : 'learned';
+    let html = previousFlameMarkup(level, stateName === 'frozen');
+    if (stateName === 'learned') {
+      html = html.replace('class="flame-emblem ', 'class="flame-emblem is-lit ');
+      html = html.replace('</svg>', '</svg><i class="flame-ember ember-a"></i><i class="flame-ember ember-b"></i><i class="flame-ember ember-c"></i>');
+    } else if (stateName === 'ash' || stateName === 'new' || stateName === 'broken') {
+      const className = stateName === 'ash' ? 'is-ash' : 'is-new';
+      html = html.replace('class="flame-emblem ', 'class="flame-emblem ' + className + ' ');
+      const label = stateName === 'ash' ? 'Ngọn lửa đang chờ thắp sáng' : 'Ngọn lửa đã tắt';
+      html = html.replace(/aria-label="[^"]*"/, 'aria-label="' + esc(label) + '"');
+    }
+    return html;
+  };
+
+  window.streakWidget = function () {
+    const streak = syncStreakMetadata(undefined, true);
+    const tier = STREAK_TIERS[streak.level];
+    const next = STREAK_TIERS.find((item, index) => index > streak.level);
+    let message = 'Học một buổi hôm nay để thắp lên ngọn lửa đầu tiên.';
+    if (streak.status === 'frozen') message = 'Một ngày nghỉ cuối tuần được bảo vệ. Học tiếp để rã đông ngọn lửa nhé.';
+    else if (streak.status === 'learned') message = 'Bạn đã hoàn thành mục tiêu hôm nay. Hẹn gặp lại ngọn lửa ngày mai!';
+    else if (streak.status === 'ash') message = streak.weekendFreezeUsed ? 'Chuỗi đang được giữ qua cuối tuần. Học hôm nay để thắp lửa trở lại.' : 'Ngọn lửa đang nghỉ. Học hôm nay để giữ chuỗi ' + streak.count + ' ngày.';
+    else if (streak.status === 'broken') message = 'Chuỗi cũ đã khép lại. Một buổi học hôm nay sẽ mở đầu chuỗi mới.';
+    const progress = next ? 'Còn ' + Math.max(0, next.min - streak.count) + ' ngày để mở khóa ' + next.name + '.' : 'Bạn đã mở khóa cấp lửa cao nhất.';
+    const badge = streak.status === 'frozen' ? 'Đóng băng · ' + streak.count + ' ngày' : streak.level === 0 ? 'Chưa thắp lửa · 0 ngày' : 'Cấp ' + streak.level + ' · ' + tier.name;
+    const cardClass = streak.status === 'learned' ? 'is-lit' : 'is-' + streak.status;
+    return '<section class="streak-card ' + cardClass + '"><div class="streak-glow"></div><div class="streak-main"><button type="button" class="streak-flame-button" aria-label="Mở lịch học tập" onclick="openStreakCalendar()">' + streakFlameMarkup(streak.level, streak.status) + '</button><div class="streak-copy"><div class="streak-kicker">Chuỗi học tập</div><div class="streak-count">' + streak.count + '<span>ngày</span></div><p class="streak-message">' + esc(message) + '</p><div class="streak-next">' + esc(progress) + '</div></div></div><div class="streak-side"><span class="streak-level-badge">' + esc(badge) + '</span><button type="button" class="streak-calendar-button" onclick="openStreakCalendar()">Lịch học</button></div></section>';
+  };
+
+  let ignitionToastTimer = 0;
+  window.launchStreakIgnition = function (days) {
+    const previous = document.getElementById('streakIgnitionToast');
+    if (previous) previous.remove();
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const sparks = reduceMotion ? '' : '<i class="ignite-spark spark-one"></i><i class="ignite-spark spark-two"></i><i class="ignite-spark spark-three"></i>';
+    const toastNode = document.createElement('div');
+    toastNode.id = 'streakIgnitionToast';
+    toastNode.className = 'streak-ignition-toast' + (reduceMotion ? ' motion-reduced' : '');
+    toastNode.setAttribute('role', 'status');
+    toastNode.setAttribute('aria-live', 'polite');
+    toastNode.innerHTML = '<div class="streak-toast-mascot">' + sparks + '<img src="./icon-192.png" alt="Capybara chúc mừng bạn"></div><div class="streak-toast-copy"><strong>Ngọn lửa đã bùng lên!</strong><span>Capybara chúc mừng chuỗi ' + esc(days) + ' ngày học của bạn.</span></div>';
+    document.body.appendChild(toastNode);
+    if (ignitionToastTimer) clearTimeout(ignitionToastTimer);
+    ignitionToastTimer = setTimeout(() => toastNode.remove(), 4200);
+  };
+
+  window.finishActivity = function (sid, correct, minutes, details) {
+    const sessionDetails = Object.assign({}, details || {});
+    if (!sessionDetails.type) {
+      if (activeSet === REVIEW_SESSION_ID) sessionDetails.type = 'srs-active-recall';
+      else if (page === 'flashcards' && flashSession) {
+        sessionDetails.type = 'flashcards';
+        sessionDetails.total = flashSession.seen;
+      } else if (page === 'test' && session) sessionDetails.type = 'quiz';
+      else if (page === 'learn' && session) sessionDetails.type = 'practice';
+      else if (page === 'match' && matchState) sessionDetails.type = 'match';
+      else sessionDetails.type = 'study';
+    }
+    if (!sessionDetails.total) {
+      if (session && Array.isArray(session.questions)) sessionDetails.total = session.questions.length;
+      else if (activeSet === REVIEW_SESSION_ID) sessionDetails.total = reviewTotal;
+      else if (page === 'match' && matchState) sessionDetails.total = matchState.cards.length;
+    }
+    if (!sessionDetails.answers && session && Array.isArray(session.answers)) {
+      sessionDetails.answers = session.answers.map(answer => {
+        const card = answer.card || answer.question && answer.question.card || {};
+        return { cardId: card.id || answer.cardId || '', term: card.term || answer.term || '', correct: !!answer.correct };
+      });
+    }
+    const date = today();
+    const before = window.calculateStudyStreak();
+    const alreadyStudied = state.lastStudyDate === date || (state.activity || []).some(item => item.date === date);
+    state.activity = state.activity || [];
+    if (!alreadyStudied) {
+      const canCarry = before.count > 0 && (before.status === 'ash' || before.status === 'frozen');
+      state.streakCount = canCarry ? before.count + 1 : 1;
+      state.lastStudyDate = date;
+      state.weekendFreezeUsed = false;
+    } else if (state.lastStudyDate !== date) {
+      state.lastStudyDate = date;
+    }
+    state.activity.push(Object.assign({ sessionId: id(), date, sid, correct: Number(correct) || 0, minutes: Number(minutes) || 0 }, sessionDetails));
+    const set = setObj(sid);
+    if (set) set.lastStudied = date;
+    save();
+    const current = window.calculateStudyStreak();
+    if (!alreadyStudied) {
+      window.launchStreakIgnition(current.count);
+      if (STREAK_MILESTONES.includes(current.count) && current.count > before.count) setTimeout(() => showStreakMilestone(current.count), 420);
+    } else toast('Buổi học đã được ghi nhận. Chuỗi hiện tại: ' + current.count + ' ngày.');
+  };
+
+  window.drawSpacedTestBriefing = function () {
+    const root = document.getElementById('studyArea');
+    if (!root) return;
+    window.reviewRecallPoints = Object.create(null);
+    root.innerHTML = '<div class="studywrap"><div class="studybar"><button type="button" class="btn ghost" onclick="stopSpacedReview()">← Dừng ôn</button><span class="muted">Ôn tập chủ động</span><span>' + reviewTotal + ' từ</span></div><section class="quizbox review-test-briefing active-recall-briefing"><div class="smalltext">Active Recall · ôn theo lịch sử học</div><h2>Tự nhớ lại, rồi mới xem đáp án</h2><p class="muted">Mỗi từ sẽ được hỏi theo mức độ bạn đã quen. Nếu kẹt, bạn có thể xin gợi ý hoặc xem đáp án; từ chỉ được tính là nhớ khi bạn tự gõ đúng.</p><ul class="review-test-facts"><li><b>Mới hoặc hay quên:</b> nghĩa, câu ví dụ khuyết từ và chữ cái đầu.</li><li><b>Đã quen:</b> nghĩa và từ loại; có thể xin gợi ý một chữ cái.</li><li><b>Sắp thành thạo:</b> nghe phát âm rồi tự viết chính tả.</li><li>Enter dùng để kiểm tra câu trả lời hoặc chuyển sang từ tiếp theo.</li></ul><div class="setactions"><button type="button" class="btn" onclick="beginSpacedKnowledgeTest(false)">Bắt đầu tự nhớ</button><button type="button" class="btn secondary" onclick="stopSpacedReview()">Dừng buổi ôn</button></div></section></div>';
+  };
+
+  window.beginSpacedReview = function () {
+    const due = dueCards();
+    const selected = Number(document.querySelector('.review-size-option[aria-pressed=true]')?.dataset.limit) || DAILY_REVIEW_LIMIT;
+    reviewCards = due.slice(0, Math.min(DAILY_REVIEW_LIMIT, selected)).map(item => ({ sid: item.sid, card: Object.assign({}, item.card) }));
+    reviewQueue = [];
+    if (!reviewCards.length) {
+      closeModal();
+      toast('Chưa có từ nào đến hạn ôn.');
+      return;
+    }
+    reviewStartedAt = Date.now();
+    reviewCorrect = 0;
+    reviewCorrectKeys = [];
+    reviewTotal = reviewCards.length;
+    reviewRoundTotal = reviewTotal;
+    reviewRequired = Math.floor(reviewTotal * 0.8) + 1;
+    reviewRetryQueue = [];
+    reviewTest = null;
+    reviewTestCards = [];
+    activeSet = REVIEW_SESSION_ID;
+    session = null;
+    matchState = null;
+    flashSession = null;
+    cardIndex = 0;
+    flipped = false;
+    page = 'flashcards';
+    closeModal();
+    if (location.hash !== '#flashcards') location.hash = 'flashcards';
+    render();
+    window.drawSpacedTestBriefing();
+  };
+
+  function recallLevel(item) {
+    const value = progress(item.sid, item.card.id) || {};
+    const correctCount = Number(value.correct) || 0;
+    const incorrectCount = Number(value.incorrect) || 0;
+    if (!value.status || value.status === 'New' || value.status === 'Learning' || value.status === 'Needs review' || correctCount < 2 || (incorrectCount >= 2 && incorrectCount > correctCount)) return 1;
+    if (correctCount >= 3 && correctCount > incorrectCount && value.status !== 'Needs review') return 3;
+    return 2;
+  }
+
+  function recallNormalize(value) {
+    return String(value || '').trim().toLocaleLowerCase('en').replace(/\s+/g, ' ');
+  }
+
+  function recallDistance(left, right) {
+    const a = Array.from(recallNormalize(left));
+    const b = Array.from(recallNormalize(right));
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= a.length; i++) {
+      const current = [i];
+      for (let j = 1; j <= b.length; j++) {
+        current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      previous = current;
+    }
+    return previous[b.length];
+  }
+
+  function recallSimilarity(left, right) {
+    const a = recallNormalize(left);
+    const b = recallNormalize(right);
+    const length = Math.max(Array.from(a).length, Array.from(b).length);
+    return length ? 1 - recallDistance(a, b) / length : 1;
+  }
+
+  function recallHintPattern(term) {
+    let first = true;
+    return Array.from(String(term || '')).map(character => {
+      if (/\s/.test(character)) return '&nbsp;&nbsp;';
+      if (!/[\p{L}\p{N}]/u.test(character)) return esc(character);
+      if (first) {
+        first = false;
+        return esc(character.toLocaleLowerCase('en'));
+      }
+      return '_';
+    }).join(' ');
+  }
+
+  function recallCloze(card) {
+    const example = String(card.example || card.definition || '').trim();
+    if (!example) return 'Câu ví dụ chưa được thêm cho từ này.';
+    const term = String(card.term || '').trim();
+    if (!term) return esc(example);
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(escaped, 'i').test(example)) return esc(example.replace(new RegExp(escaped, 'ig'), '________'));
+    const candidates = term.split(/\s+/).filter(word => word.length >= 4).sort((a, b) => b.length - a.length);
+    for (const candidate of candidates) {
+      const stem = candidate.length > 5 ? candidate.slice(0, -1) : candidate;
+      const partial = new RegExp('\\b' + stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\w-]*\\b', 'i');
+      if (partial.test(example)) return esc(example.replace(partial, '________'));
+    }
+    return esc(example) + ' <span class="recall-cloze-blank">________</span>';
+  }
+
+  function recallPartOfSpeech(card) {
+    const raw = String(card.pos || '').trim();
+    const value = raw.toLocaleLowerCase('en');
+    if (!value) return '';
+    if (value === 'n' || value.includes('noun')) return 'n';
+    if (value === 'v' || value.includes('verb')) return 'v';
+    if (value === 'adj' || value.includes('adjective')) return 'adj';
+    if (value === 'adv' || value.includes('adverb')) return 'adv';
+    return raw;
+  }
+
+  window.drawSpacedKnowledgeQuestion = function () {
+    const root = document.getElementById('studyArea');
+    const test = reviewTest;
+    if (!root || !test) return;
+    const question = test.questions[test.index];
+    if (!question) return;
+    const item = question.item;
+    const card = item.card;
+    const level = question.level;
+    const key = item.sid + ':' + card.id;
+    const levelLabel = level === 1 ? 'Mức 1 · Từ mới / hay quên' : level === 2 ? 'Mức 2 · Từ đã quen' : 'Mức 3 · Nghe và viết';
+    let prompt = '';
+    if (level === 1) {
+      prompt = '<div class="recall-meaning">' + esc(card.meaning) + '</div><div class="recall-cloze-wrap"><span class="smalltext">Điền từ còn thiếu trong câu ví dụ</span><p class="recall-cloze">' + recallCloze(card) + '</p></div><div class="recall-pattern" aria-label="Gợi ý chữ cái đầu và số ký tự">' + recallHintPattern(card.term) + '</div>';
+    } else if (level === 2) {
+      prompt = '<div class="recall-meaning">' + esc(card.meaning) + '</div><div class="recall-pos">' + esc(recallPartOfSpeech(card) || 'Từ vựng') + '</div><div id="recallHintResult" class="recall-hint-result" aria-live="polite"></div>';
+    } else {
+      prompt = '<div class="recall-audio-prompt"><span aria-hidden="true">🎧</span><strong>Nghe từ tiếng Anh rồi viết lại</strong><span>Không hiển thị chữ cái gợi ý</span><button type="button" class="btn secondary" onclick="speakVocabulary(' + jsLiteral(card.term) + ')">🔊 Nghe lại</button></div>';
+    }
+    const hintButton = level === 2 ? '<button type="button" class="btn secondary recall-hint-button" onclick="showSpacedRecallHint()">Gợi ý 1 chữ cái</button>' : '';
+    root.innerHTML = '<div class="studywrap active-recall-session"><div class="studybar"><button type="button" class="btn ghost" onclick="stopSpacedReview()">← Dừng ôn</button><span class="muted">Tự nhớ · ' + levelLabel + '</span><span>' + (test.index + 1) + ' / ' + test.questions.length + '</span></div><div class="progressline"><span style="width:' + (test.index / Math.max(1, test.questions.length) * 100) + '%"></span></div><section class="quizbox recall-question" aria-labelledby="recallQuestionTitle"><div class="smalltext">' + (test.isRetry ? 'Thử lại từ còn vướng' : 'Ôn tập theo lịch sử từng từ') + '</div><h2 id="recallQuestionTitle">' + levelLabel + '</h2>' + prompt + '<form class="recall-answer-form" onsubmit="event.preventDefault();advanceSpacedRecallOnEnter()"><label class="visually-hidden" for="spacedRecallAnswer">Nhập từ tiếng Anh</label><input id="spacedRecallAnswer" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="go" placeholder="Gõ từ tiếng Anh…"><button type="submit" class="btn">Kiểm tra</button></form><div id="spacedRecallFeedback" class="recall-feedback" aria-live="polite"></div><div class="recall-secondary-actions">' + hintButton + '<button type="button" class="btn ghost" onclick="revealSpacedRecallAnswer()">Chốt sai · xem đáp án</button></div><div id="spacedRecallNext" class="hidden recall-next"><button type="button" class="btn" onclick="nextSpacedKnowledgeQuestion()">' + (test.index + 1 === test.questions.length ? 'Xem kết quả' : 'Từ tiếp theo') + '</button></div></section></div>';
+    const input = root.querySelector('#spacedRecallAnswer');
+    if (input) {
+      try { input.focus({ preventScroll: true }); } catch (_) { input.focus(); }
+    }
+    if (level === 3 && !question.didSpeak) {
+      question.didSpeak = true;
+      if (typeof window.speakVocabulary === 'function') window.speakVocabulary(card.term);
+    }
+  };
+
+  window.beginSpacedKnowledgeTest = function (isRetry) {
+    const items = isRetry ? reviewRetryQueue : reviewCards;
+    if (!items.length) {
+      window.completeSpacedKnowledgeTest();
+      return;
+    }
+    if (!isRetry) {
+      reviewCorrect = 0;
+      reviewCorrectKeys = [];
+      window.reviewRecallPoints = Object.create(null);
+    }
+    reviewTestCards = items.map(item => ({ sid: item.sid, card: Object.assign({}, item.card) }));
+    reviewRetryQueue = [];
+    const questions = reviewTestCards.slice().sort(() => Math.random() - 0.5).map(item => ({ item, level: recallLevel(item) }));
+    reviewTest = { questions, index: 0, answers: [], started: Date.now(), locked: false, isRetry: !!isRetry };
+    window.drawSpacedKnowledgeQuestion();
+  };
+
+  window.showSpacedRecallHint = function () {
+    const test = reviewTest;
+    const question = test && test.questions[test.index];
+    if (!question || question.level !== 2 || test.hintUsed) return;
+    test.hintUsed = true;
+    const hint = Array.from(String(question.item.card.term || ''))[0] || '';
+    const result = document.getElementById('recallHintResult');
+    if (result) result.textContent = 'Chữ cái đầu: ' + hint.toLocaleLowerCase('en') + ' · câu này được tính 0,8 điểm nếu trả lời đúng.';
+    const button = document.querySelector('.recall-hint-button');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Đã dùng gợi ý';
+    }
+  };
+
+  window.advanceSpacedRecallOnEnter = function () {
+    if (!reviewTest) return;
+    if (reviewTest.locked) window.nextSpacedKnowledgeQuestion();
+    else window.submitSpacedKnowledgeAnswer();
+  };
+
+  window.submitSpacedKnowledgeAnswer = function () {
+    const test = reviewTest;
+    if (!test || test.locked) return;
+    const input = document.getElementById('spacedRecallAnswer');
+    const answer = String(input && input.value || '').trim();
+    const feedback = document.getElementById('spacedRecallFeedback');
+    if (!answer) {
+      if (feedback) {
+        feedback.className = 'recall-feedback is-near';
+        feedback.textContent = 'Nhập từ tiếng Anh trước nhé.';
+      }
+      if (input) input.focus();
+      return;
+    }
+    const question = test.questions[test.index];
+    const item = question.item;
+    const card = item.card;
+    const key = item.sid + ':' + card.id;
+    const correct = recallNormalize(answer) === recallNormalize(card.term);
+    if (!correct) {
+      const near = recallSimilarity(answer, card.term) >= 0.8;
+      test.attempts = (test.attempts || 0) + 1;
+      if (feedback) {
+        feedback.className = 'recall-feedback ' + (near ? 'is-near' : 'is-wrong');
+        feedback.textContent = near ? 'Gần đúng rồi, thử lại nhé!' : 'Chưa đúng, bạn có thể thử lại hoặc chốt sai để xem đáp án.';
+      }
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      return;
+    }
+    test.locked = true;
+    record(item.sid, card, true);
+    if (!reviewCorrectKeys.includes(key)) reviewCorrectKeys.push(key);
+    reviewCorrect = reviewCorrectKeys.length;
+    window.reviewRecallPoints[key] = test.hintUsed ? 0.8 : 1;
+    test.answers.push({ item, correct: true, hintUsed: !!test.hintUsed });
+    if (input) input.disabled = true;
+    if (feedback) {
+      feedback.className = 'recall-feedback is-correct';
+      feedback.innerHTML = '<strong>✓ Chính xác!</strong> ' + (test.hintUsed ? 'Câu này được tính 0,8 điểm vì đã dùng gợi ý.' : 'Bạn đã tự gõ đúng.') + '<div class="recall-answer-reveal">' + esc(card.term) + ' — ' + esc(card.meaning) + '</div>';
+    }
+    document.querySelector('.recall-secondary-actions')?.classList.add('hidden');
+    document.getElementById('spacedRecallNext')?.classList.remove('hidden');
+  };
+
+  window.revealSpacedRecallAnswer = function () {
+    const test = reviewTest;
+    if (!test || test.locked) return;
+    stopVocabularySpeech();
+    const question = test.questions[test.index];
+    const item = question.item;
+    const card = item.card;
+    const key = item.sid + ':' + card.id;
+    test.locked = true;
+    record(item.sid, card, false);
+    window.reviewRecallPoints[key] = 0;
+    test.answers.push({ item, correct: false, revealed: true, hintUsed: !!test.hintUsed });
+    const input = document.getElementById('spacedRecallAnswer');
+    if (input) input.disabled = true;
+    const feedback = document.getElementById('spacedRecallFeedback');
+    if (feedback) {
+      feedback.className = 'recall-feedback is-wrong';
+      feedback.innerHTML = 'Đáp án: <strong>' + esc(card.term) + '</strong> — ' + esc(card.meaning) + '<div>' + esc(card.example || card.definition || '') + '</div><small>Từ này chưa được tính là hoàn thành; bạn sẽ gặp lại trong lượt thử lại.</small>';
+    }
+    document.querySelector('.recall-secondary-actions')?.classList.add('hidden');
+    document.getElementById('spacedRecallNext')?.classList.remove('hidden');
+  };
+
+  window.nextSpacedKnowledgeQuestion = function () {
+    if (!reviewTest || !reviewTest.locked) return;
+    stopVocabularySpeech();
+    reviewTest.index++;
+    reviewTest.locked = false;
+    reviewTest.hintUsed = false;
+    if (reviewTest.index >= reviewTest.questions.length) {
+      window.completeSpacedKnowledgeTest();
+      return;
+    }
+    window.drawSpacedKnowledgeQuestion();
+  };
+
+  window.completeSpacedKnowledgeTest = function () {
+    const total = reviewTotal;
+    const correct = reviewCorrectKeys.length;
+    const points = reviewCards.reduce((sum, item) => sum + (Number(window.reviewRecallPoints[item.sid + ':' + item.card.id]) || 0), 0);
+    const percent = total ? Math.round(points / total * 100) : 0;
+    const missed = reviewCards.filter(item => (Number(window.reviewRecallPoints[item.sid + ':' + item.card.id]) || 0) < 1);
+    if (total && points / total > 0.8) {
+      window.finishSpacedReview(reviewTestCards[reviewTestCards.length - 1]?.sid);
+      return;
+    }
+    reviewRetryQueue = missed;
+    reviewTest = null;
+    reviewTestCards = [];
+    const root = document.getElementById('studyArea');
+    const items = missed.map(item => '<li><b>' + esc(item.card.term) + '</b> — ' + esc(item.card.meaning) + '</li>').join('');
+    if (root) root.innerHTML = '<div class="studywrap"><section class="panel result review-score"><div class="smalltext">Lượt này chưa đạt 80%</div><div class="score">' + percent + '%</div><h2>Bạn tự gõ đúng ' + correct + '/' + total + ' từ</h2><p class="muted">Các từ đã gõ đúng được giữ lại; chỉ những từ chưa tự nhớ sẽ xuất hiện lại.</p><div class="review-missed-list"><strong>Các từ cần thử lại</strong><ul>' + items + '</ul></div><div class="setactions" style="justify-content:center"><button type="button" class="btn" onclick="beginSpacedKnowledgeTest(true)">Thử lại ' + missed.length + ' từ</button><button type="button" class="btn secondary" onclick="stopSpacedReview()">Dừng buổi ôn</button></div></section></div>';
+  };
+
+  window.finishSpacedReview = function (lastSid) {
+    stopVocabularySpeech();
+    const total = reviewTotal;
+    const correct = reviewCorrectKeys.length;
+    const points = reviewCards.reduce((sum, item) => sum + (Number(window.reviewRecallPoints[item.sid + ':' + item.card.id]) || 0), 0);
+    const score = total ? Math.round(points / total * 100) : 0;
+    const minutes = Math.max(1, Math.round((Date.now() - reviewStartedAt) / 60000));
+    const sid = lastSid || reviewCards[0]?.sid;
+    const answers = reviewCards.map(item => ({ cardId: item.card.id, term: item.card.term, correct: reviewCorrectKeys.includes(item.sid + ':' + item.card.id), score: Number(window.reviewRecallPoints[item.sid + ':' + item.card.id]) || 0 }));
+    reviewQueue = [];
+    reviewCards = [];
+    reviewCorrectKeys = [];
+    reviewRetryQueue = [];
+    reviewRoundTotal = 0;
+    reviewRequired = 0;
+    reviewTest = null;
+    reviewTestCards = [];
+    activeSet = null;
+    reviewTotal = 0;
+    reviewCorrect = 0;
+    reviewStartedAt = 0;
+    flashSession = null;
+    window.reviewRecallPoints = Object.create(null);
+    page = 'home';
+    if (location.hash !== '#home') location.hash = 'home';
+    if (sid) finishActivity(sid, correct, minutes, { type: 'srs-active-recall', total, score, answers });
+    render();
+    toast('Hoàn thành ôn tập: ' + correct + '/' + total + ' từ tự nhớ đúng · điểm ' + score + '/100.');
+  };
+
+  const previousStopSpacedReview = window.stopSpacedReview;
+  window.stopSpacedReview = function () {
+    stopVocabularySpeech();
+    window.reviewRecallPoints = Object.create(null);
+    if (typeof previousStopSpacedReview === 'function') previousStopSpacedReview();
+  };
+
+  const previousExportData = window.exportData;
+  if (typeof previousExportData === 'function') {
+    window.exportData = function () {
+      syncStreakMetadata(undefined, true);
+      return previousExportData();
+    };
+  }
+
+  migrateStreakMetadata();
 
   if (location.hash === '#view') window.nav('library');
   else if (typeof render === 'function') render();
