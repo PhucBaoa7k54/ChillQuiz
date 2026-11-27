@@ -1286,7 +1286,7 @@
     reviewCorrectKeys = [];
     reviewTotal = reviewCards.length;
     reviewRoundTotal = reviewTotal;
-    reviewRequired = Math.floor(reviewTotal * 0.8) + 1;
+    reviewRequired = Math.ceil(reviewTotal * 0.9);
     reviewRetryQueue = [];
     reviewTest = null;
     reviewTestCards = [];
@@ -1538,7 +1538,7 @@
     const points = reviewCards.reduce((sum, item) => sum + (Number(window.reviewRecallPoints[item.sid + ':' + item.card.id]) || 0), 0);
     const percent = total ? Math.round(points / total * 100) : 0;
     const missed = reviewCards.filter(item => (Number(window.reviewRecallPoints[item.sid + ':' + item.card.id]) || 0) < 1);
-    if (total && points / total > 0.8) {
+    if (total && points / total >= 0.9) {
       window.finishSpacedReview(reviewTestCards[reviewTestCards.length - 1]?.sid);
       return;
     }
@@ -1547,7 +1547,7 @@
     reviewTestCards = [];
     const root = document.getElementById('studyArea');
     const items = missed.map(item => '<li><b>' + esc(item.card.term) + '</b> — ' + esc(item.card.meaning) + '</li>').join('');
-    if (root) root.innerHTML = '<div class="studywrap"><section class="panel result review-score"><div class="smalltext">Lượt này chưa đạt 80%</div><div class="score">' + percent + '%</div><h2>Bạn tự gõ đúng ' + correct + '/' + total + ' từ</h2><p class="muted">Các từ đã gõ đúng được giữ lại; chỉ những từ chưa tự nhớ sẽ xuất hiện lại.</p><div class="review-missed-list"><strong>Các từ cần thử lại</strong><ul>' + items + '</ul></div><div class="setactions" style="justify-content:center"><button type="button" class="btn" onclick="beginSpacedKnowledgeTest(true)">Thử lại ' + missed.length + ' từ</button><button type="button" class="btn secondary" onclick="stopSpacedReview()">Dừng buổi ôn</button></div></section></div>';
+    if (root) root.innerHTML = '<div class="studywrap"><section class="panel result review-score"><div class="smalltext">Chưa đạt 90%</div><div class="score">' + percent + '%</div><h2>Bạn tự gõ đúng ' + correct + '/' + total + ' từ</h2><p class="muted">Các từ đã gõ đúng được giữ lại; từ sai hoặc đã dùng gợi ý sẽ xuất hiện lại để nâng điểm.</p><div class="review-missed-list"><strong>Các từ cần thử lại</strong><ul>' + items + '</ul></div><div class="setactions" style="justify-content:center"><button type="button" class="btn" onclick="beginSpacedKnowledgeTest(true)">Thử lại ' + missed.length + ' từ</button><button type="button" class="btn secondary" onclick="stopSpacedReview()">Dừng buổi ôn</button></div></section></div>';
   };
 
   window.finishSpacedReview = function (lastSid) {
