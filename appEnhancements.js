@@ -1018,6 +1018,8 @@
       html = html.replace(/(<div class="formgroup"><label>Phát âm mặc định<\/label><select id="accent" class="field">[\s\S]*?<\/select><\/div>)/, '$1<div class="formgroup"><label for="speechRate">Tốc độ đọc mẫu</label><select id="speechRate" class="field">' + options + '</select></div>');
       html = html.replace('Xóa toàn bộ dữ liệu</button>', 'Xóa dữ liệu trên thiết bị</button>');
       html = html.replace('<button type="button" class="btn small" style="background:var(--color-danger);margin-top:12px" onclick="clearData()">Xóa dữ liệu trên thiết bị</button>', '<p class="footnote">Xóa dữ liệu cục bộ; dữ liệu đã đồng bộ trên tài khoản vẫn được giữ.</p><button type="button" class="btn small" style="background:var(--color-danger);margin-top:12px" onclick="clearData()">Xóa dữ liệu trên thiết bị</button>');
+      const passwordPanel = '<div class="panel settings-password-panel"><h2>Đổi mật khẩu</h2>' + (syncUser ? '<p class="footnote">Đặt mật khẩu mới cho tài khoản đang đăng nhập.</p><form class="settings-password-form" onsubmit="event.preventDefault();changePasswordFromSettings()"><div class="formgroup"><label for="settingsCurrentPassword">Mật khẩu hiện tại</label><input class="field" id="settingsCurrentPassword" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu hiện tại" required oninput="validateSettingsPassword()"></div><div class="formgroup"><label for="settingsNewPassword">Mật khẩu mới</label><input class="field" id="settingsNewPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Ít nhất 8 ký tự" required oninput="validateSettingsPassword()"></div><div class="formgroup"><label for="settingsConfirmPassword">Nhập lại mật khẩu mới</label><input class="field" id="settingsConfirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Nhập lại mật khẩu mới" required oninput="validateSettingsPassword()"></div><p class="footnote" id="settingsPasswordStatus" role="status" aria-live="polite">Mật khẩu cần có ít nhất 8 ký tự.</p><button type="submit" class="btn small" id="settingsPasswordSubmit" disabled>Cập nhật mật khẩu</button></form>' : '<p class="footnote">Đăng nhập tài khoản để đổi mật khẩu.</p><button type="button" class="btn secondary small" onclick="openAuthModal(\'signin\')">Đăng nhập</button>') + '</div>';
+      html = html.replace(/<\/div><\/div>$/, '</div>' + passwordPanel + '</div>');
       return html;
     };
   })(original.settingsPage);
@@ -1027,6 +1029,272 @@
     const rate = Number(field && field.value);
     state.settings.speechRate = SPEECH_RATES.includes(rate) ? rate : 1;
     original.saveSettings();
+  };
+
+  const previousUpdateAuthPasswordHint = window.updateAuthPasswordHint;
+  window.updateAuthPasswordHint = function () {
+    const input = document.getElementById('authPassword');
+    if (!input) return typeof previousUpdateAuthPasswordHint === 'function' ? previousUpdateAuthPasswordHint() : undefined;
+    const mode = authMode;
+    const confirm = document.getElementById('authPasswordConfirm');
+    const confirmField = document.getElementById('authConfirmField');
+    const needsPassword = mode !== 'reset';
+    const needsConfirmation = mode === 'signup' || mode === 'update';
+    const needsMinimumLength = mode === 'signup' || mode === 'update';
+    const validLength = input.value.length >= 8;
+    const matches = !!confirm && confirm.value === input.value;
+    input.required = needsPassword;
+    if (confirm) confirm.required = needsConfirmation;
+    if (confirmField) confirmField.hidden = !needsConfirmation;
+    const hint = document.getElementById('authPasswordHint');
+    if (hint) {
+      hint.classList.toggle('is-valid', validLength && needsConfirmation);
+      hint.textContent = needsConfirmation ? (validLength ? '✓ Mật khẩu đã đủ độ dài.' : 'Ít nhất 8 ký tự để bảo vệ tài khoản.') : 'Mật khẩu tài khoản của bạn.';
+    }
+    const confirmHint = document.getElementById('authPasswordConfirmHint');
+    if (confirmHint) {
+      confirmHint.classList.toggle('is-valid', matches && needsConfirmation);
+      confirmHint.classList.toggle('is-error', !!confirm?.value && !matches);
+      confirmHint.textContent = !confirm?.value ? 'Nhập lại mật khẩu để xác nhận.' : matches ? '✓ Mật khẩu trùng khớp.' : 'Mật khẩu nhập lại chưa khớp.';
+    }
+    if (confirm) confirm.setAttribute('aria-invalid', String(needsConfirmation && !!confirm.value && !matches));
+    const submit = document.getElementById('authSubmit');
+    if (submit) submit.disabled = authBusy || needsMinimumLength && (!validLength || needsConfirmation && !matches);
+  };
+
+  function authSubmitLabel(mode) {
+    return mode === 'signup' ? 'Tạo tài khoản mới' : mode === 'reset' ? 'Gửi liên kết khôi phục' : mode === 'update' ? 'Cập nhật mật khẩu' : 'Đăng nhập';
+  }
+
+  function syncAuthDialogMode(mode) {
+    authMode = mode;
+    const reset = mode === 'reset';
+    const update = mode === 'update';
+    const email = document.getElementById('authEmail');
+    const emailField = email?.closest('.auth-field');
+    const password = document.getElementById('authPassword');
+    const passwordField = password?.closest('.auth-field');
+    const confirm = document.getElementById('authPasswordConfirm');
+    const confirmLabel = confirm?.closest('.auth-field')?.querySelector('label');
+    const tabs = document.getElementById('authTabs');
+    const title = document.getElementById('authFormTitle');
+    const intro = document.getElementById('authFormIntro');
+    const submitText = document.getElementById('authSubmitText');
+    const forgot = document.getElementById('authForgotPassword');
+    const back = document.getElementById('authBackToSignin');
+    if (tabs) tabs.hidden = reset || update;
+    if (emailField) emailField.hidden = update;
+    if (email) email.required = !update;
+    if (passwordField) passwordField.hidden = reset;
+    if (password) {
+      password.required = !reset;
+      password.autocomplete = mode === 'signin' ? 'current-password' : 'new-password';
+      const label = passwordField?.querySelector('label');
+      if (label) label.textContent = update ? 'Mật khẩu mới' : 'Mật khẩu';
+    }
+    if (confirmLabel) confirmLabel.textContent = update ? 'Nhập lại mật khẩu mới' : 'Nhập lại mật khẩu';
+    if (confirm) confirm.placeholder = update ? 'Nhập lại mật khẩu mới' : 'Nhập lại mật khẩu';
+    if (forgot) {
+      forgot.hidden = mode !== 'signin';
+      forgot.disabled = authBusy;
+    }
+    if (back) {
+      back.hidden = !reset && !update;
+      back.disabled = authBusy;
+    }
+    if (title) title.textContent = reset ? 'Đặt lại mật khẩu' : update ? 'Tạo mật khẩu mới' : mode === 'signup' ? 'Tạo tài khoản miễn phí' : 'Chào mừng bạn quay lại';
+    if (intro) intro.textContent = reset ? 'Nhập email đăng ký. Chúng tôi sẽ gửi liên kết an toàn để đặt lại mật khẩu.' : update ? 'Nhập mật khẩu mới cho tài khoản của bạn.' : mode === 'signup' ? 'Bắt đầu lưu tiến độ và chuỗi học của bạn trên đám mây.' : 'Đăng nhập để tiếp tục học từ thiết bị nào cũng được.';
+    if (submitText) submitText.textContent = authSubmitLabel(mode);
+    window.updateAuthPasswordHint();
+  }
+
+  const previousOpenAuthModal = window.openAuthModal;
+  if (typeof previousOpenAuthModal === 'function') {
+    window.openAuthModal = function (...args) {
+      const result = previousOpenAuthModal.apply(this, args);
+      const form = document.getElementById('authForm');
+      if (form && !document.getElementById('authForgotPassword')) {
+        const actions = document.createElement('div');
+        actions.className = 'auth-extra-actions';
+        actions.innerHTML = '<button type="button" class="auth-link-button" id="authForgotPassword" onclick="beginPasswordReset()">Quên mật khẩu?</button><button type="button" class="auth-link-button" id="authBackToSignin" onclick="returnToAuthSignin()" hidden>← Quay lại đăng nhập</button>';
+        form.querySelector('#authSubmit')?.before(actions);
+      }
+      syncAuthDialogMode(authMode);
+      return result;
+    };
+  }
+
+  const previousSwitchAuthTab = window.switchAuthTab;
+  if (typeof previousSwitchAuthTab === 'function') {
+    window.switchAuthTab = function (...args) {
+      const result = previousSwitchAuthTab.apply(this, args);
+      syncAuthDialogMode(authMode);
+      return result;
+    };
+  }
+
+  const previousSetAuthBusy = window.setAuthBusy;
+  if (typeof previousSetAuthBusy === 'function') {
+    window.setAuthBusy = function (...args) {
+      const result = previousSetAuthBusy.apply(this, args);
+      const submitText = document.getElementById('authSubmitText');
+      if (submitText && !authBusy) submitText.textContent = authSubmitLabel(authMode);
+      document.querySelectorAll('.auth-extra-actions button').forEach(button => { button.disabled = authBusy; });
+      return result;
+    };
+  }
+
+  window.beginPasswordReset = function () {
+    if (authBusy) return;
+    const password = document.getElementById('authPassword');
+    const confirm = document.getElementById('authPasswordConfirm');
+    if (password) password.value = '';
+    if (confirm) confirm.value = '';
+    authNotice('');
+    syncAuthDialogMode('reset');
+    document.getElementById('authEmail')?.focus();
+  };
+
+  window.returnToAuthSignin = function () {
+    if (authBusy) return;
+    if (authMode === 'signup' || authMode === 'signin') window.switchAuthTab('signin');
+    else {
+      const password = document.getElementById('authPassword');
+      const confirm = document.getElementById('authPasswordConfirm');
+      if (password) password.value = '';
+      if (confirm) confirm.value = '';
+      authNotice('');
+      syncAuthDialogMode('signin');
+    }
+  };
+
+  window.sendPasswordReset = async function () {
+    const email = document.getElementById('authEmail')?.value.trim();
+    if (!email) {
+      authNotice('Nhập email tài khoản trước nhé.', 'error');
+      document.getElementById('authEmail')?.focus();
+      return;
+    }
+    try {
+      const client = syncFormConfig();
+      setAuthBusy(true, 'Đang gửi email…');
+      authNotice('Đang gửi liên kết khôi phục mật khẩu…', 'loading');
+      const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/' });
+      if (error) throw error;
+      authNotice('Nếu email này thuộc tài khoản, liên kết đặt lại mật khẩu đã được gửi. Hãy kiểm tra hộp thư và thư rác.', 'success');
+    } catch (error) {
+      authNotice(error?.message || 'Chưa gửi được email. Vui lòng thử lại.', 'error');
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  window.openPasswordRecoveryModal = function () {
+    window.openAuthModal('signin');
+    syncAuthDialogMode('update');
+    authNotice('Liên kết đã được xác nhận. Hãy đặt mật khẩu mới cho tài khoản.', 'success');
+    requestAnimationFrame(() => document.getElementById('authPassword')?.focus());
+  };
+
+  window.updatePasswordFromRecovery = async function () {
+    const password = document.getElementById('authPassword')?.value || '';
+    const confirm = document.getElementById('authPasswordConfirm')?.value || '';
+    if (password.length < 8) return authNotice('Mật khẩu mới cần có ít nhất 8 ký tự.', 'error');
+    if (password !== confirm) return authNotice('Mật khẩu nhập lại chưa khớp.', 'error');
+    let changed = false;
+    try {
+      const client = syncFormConfig();
+      setAuthBusy(true, 'Đang cập nhật mật khẩu…');
+      authNotice('Đang cập nhật mật khẩu an toàn…', 'loading');
+      const { error } = await client.auth.updateUser({ password });
+      if (error) throw error;
+      document.getElementById('authPassword').value = '';
+      document.getElementById('authPasswordConfirm').value = '';
+      authNotice('Mật khẩu đã được cập nhật. Bạn có thể tiếp tục học.', 'success');
+      toast('Đã đổi mật khẩu thành công.');
+      changed = true;
+    } catch (error) {
+      authNotice(error?.message || 'Chưa cập nhật được mật khẩu. Hãy mở lại liên kết khôi phục rồi thử lại.', 'error');
+    } finally {
+      setAuthBusy(false);
+      if (changed) setTimeout(() => closeModal(), 900);
+    }
+  };
+
+  window.submitAuthSync = function () {
+    if (authMode === 'signup') return signUpSync();
+    if (authMode === 'reset') return sendPasswordReset();
+    if (authMode === 'update') return updatePasswordFromRecovery();
+    return signInSync();
+  };
+
+  const recoveryAuthClients = new WeakSet();
+  function attachPasswordRecoveryListener(client) {
+    if (!client?.auth?.onAuthStateChange || recoveryAuthClients.has(client)) return;
+    client.auth.onAuthStateChange(event => {
+      if (event === 'PASSWORD_RECOVERY') setTimeout(() => window.openPasswordRecoveryModal(), 0);
+    });
+    recoveryAuthClients.add(client);
+  }
+  const previousInitSyncClient = window.initSyncClient;
+  if (typeof previousInitSyncClient === 'function') {
+    window.initSyncClient = function (...args) {
+      const client = previousInitSyncClient.apply(this, args);
+      attachPasswordRecoveryListener(client);
+      return client;
+    };
+  }
+  if (typeof syncClient !== 'undefined' && syncClient) attachPasswordRecoveryListener(syncClient);
+
+  window.validateSettingsPassword = function () {
+    const current = document.getElementById('settingsCurrentPassword')?.value || '';
+    const password = document.getElementById('settingsNewPassword')?.value || '';
+    const confirm = document.getElementById('settingsConfirmPassword')?.value || '';
+    const submit = document.getElementById('settingsPasswordSubmit');
+    const status = document.getElementById('settingsPasswordStatus');
+    const valid = !!current && password.length >= 8 && password === confirm;
+    if (submit) submit.disabled = !valid;
+    if (status) {
+      status.classList.toggle('is-error', !!confirm && password !== confirm);
+      status.classList.toggle('is-success', valid);
+      status.textContent = !current ? 'Nhập mật khẩu hiện tại để xác nhận tài khoản.' : !password ? 'Mật khẩu mới cần có ít nhất 8 ký tự.' : password.length < 8 ? 'Mật khẩu mới cần có ít nhất 8 ký tự.' : !confirm ? 'Nhập lại mật khẩu mới để xác nhận.' : valid ? '✓ Hai mật khẩu khớp nhau.' : 'Mật khẩu nhập lại chưa khớp.';
+    }
+  };
+
+  window.changePasswordFromSettings = async function () {
+    const current = document.getElementById('settingsCurrentPassword')?.value || '';
+    const password = document.getElementById('settingsNewPassword')?.value || '';
+    const confirm = document.getElementById('settingsConfirmPassword')?.value || '';
+    const status = document.getElementById('settingsPasswordStatus');
+    const submit = document.getElementById('settingsPasswordSubmit');
+    if (!syncUser) {
+      openAuthModal('signin');
+      return;
+    }
+    if (!current || password.length < 8 || password !== confirm) {
+      validateSettingsPassword();
+      return;
+    }
+    let changed = false;
+    try {
+      if (submit) { submit.disabled = true; submit.textContent = 'Đang cập nhật…'; }
+      if (status) { status.classList.remove('is-error', 'is-success'); status.textContent = 'Đang cập nhật mật khẩu…'; }
+      const client = syncFormConfig();
+      const { error: verifyError } = await client.auth.signInWithPassword({ email: syncUser.email, password: current });
+      if (verifyError) throw new Error('Mật khẩu hiện tại không chính xác.');
+      const { error } = await client.auth.updateUser({ password });
+      if (error) throw error;
+      document.getElementById('settingsCurrentPassword').value = '';
+      document.getElementById('settingsNewPassword').value = '';
+      document.getElementById('settingsConfirmPassword').value = '';
+      if (status) { status.classList.remove('is-error'); status.classList.add('is-success'); status.textContent = 'Đã đổi mật khẩu thành công.'; }
+      toast('Đã đổi mật khẩu thành công.');
+      changed = true;
+    } catch (error) {
+      if (status) { status.classList.remove('is-success'); status.classList.add('is-error'); status.textContent = error?.message || 'Chưa cập nhật được mật khẩu. Vui lòng thử lại.'; }
+    } finally {
+      if (submit) { submit.textContent = 'Cập nhật mật khẩu'; submit.disabled = changed || !current || password.length < 8 || password !== confirm; }
+    }
   };
 
   function localDayGap(from, to) {

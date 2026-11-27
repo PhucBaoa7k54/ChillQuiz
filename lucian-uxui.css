@@ -470,3 +470,18 @@ body .streak-card.is-lit .flame-emblem.is-lit .flame-inner { transform-box: fill
   .streak-card.is-lit .streak-glow { opacity: .45; }
   .streak-ignition-toast { animation: none!important; }
 }
+
+/* Password recovery and account password updates */
+.auth-extra-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-xs); }
+.auth-extra-actions[hidden],.auth-field[hidden],.auth-tabs[hidden] { display: none!important; }
+.auth-link-button { min-height: 40px; padding: var(--space-2xs) var(--space-xs); border: 0; border-radius: var(--radius-input); background: transparent; color: var(--color-brand); font-size: var(--text-xs); font-weight: 650; cursor: pointer; }
+.auth-link-button:hover { background: var(--color-brand-soft); }
+.auth-link-button:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.settings-password-panel h2 { margin-top: 0; }
+.settings-password-form { display: grid; gap: var(--space-sm); }
+.settings-password-form .formgroup { margin: 0; }
+.settings-password-form .footnote { margin: 0; }
+.settings-password-form .footnote.is-error { color: var(--color-error); }
+.settings-password-form .footnote.is-success { color: var(--color-success); }
+.settings-password-form .btn { justify-self: start; }
+@media (max-width:42rem) { .settings-password-form .btn { width: 100%; } }
